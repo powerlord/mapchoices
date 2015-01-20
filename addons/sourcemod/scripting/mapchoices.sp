@@ -35,7 +35,27 @@
 
 #define VERSION "1.0.0 alpha 1"
 
+new roundCount;
+new Handle:g_Trie_NominatedMaps;
+new String:g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+
+//ConVars
 new Handle:g_Cvar_Enabled;
+
+// Valve ConVars
+new Handle:g_Cvar_MaxRounds;
+new Handle:g_Cvar_Timelimit;
+
+// Global Forwards
+new Handle:g_Forward_MapVoteStarted;
+new Handle:g_Forward_MapVoteEnded;
+new Handle:g_Forward_NominationAdded;
+new Handle:g_Forward_NominationRemoved;
+
+// Private Forwards
+new Handle:g_Forward_HandlerVoteStart;
+new Handle:g_Forward_HandlerCancelVote;
+new Handle:g_Forward_MapFilter;
 
 public Plugin:myinfo = {
 	name			= "MapChoices",
@@ -48,11 +68,8 @@ public Plugin:myinfo = {
 // Native Support
 public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 {
-	CreateNative("Plugin_FunctionWithArg", Native_FunctionWithArg);
-	CreateNative("Plugin_FunctionWithoutArg", Native_FunctionWithoutArg);
-	CreateNative("Plugin_RegisterCallback", Native_RegisterCallback);
-	CreateNative("Plugin_UnregisterCallback", Native_UnregisterCallback);
-	
+	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
+	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	RegPluginLibrary("mapchoices");
 	
 	return APLRes_Success;
@@ -60,38 +77,77 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
   
 public OnPluginStart()
 {
+	LoadTranslations("common.phrases");
+	LoadTranslations("mapchoices.phrases");
+	
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	
+	g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
+	g_Cvar_Timelimit = FindConVar("mp_timelimit");
+	
+	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_MapVoteStarted", ET_Ignore);
+	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_MapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
+	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_NominationAdded", ET_Ignore, Param_String, Param_Cell);
+	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_NominationRemoved", ET_Ignore, Param_String, Param_Cell);
+	
+	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
+	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
+	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_Cell);
+	
+	HookEvent("round_end", Event_RoundEnd);
 }
 
-/*
+public OnConfigsExecuted()
+{
+	new String:configFile[PLATFORM_MAX_PATH+1];
+	
+	BuildPath(Path_SM, configFile, sizeof(configFile), "configs/mapchoices.cfg");
+}
+
+public OnClientDisconnect(client)
+{
+	// Clear the client's nominations
+	if (g_MapNominations[client][0] != '\0')
+	{
+		new count;
+		if (GetTrieValue(g_Trie_NominatedMaps, g_MapNominations[client], count))
+		{
+			--count;
+			
+			// Whoops, no more nominations for this map, so lets remove it.
+			if (count <= 0)
+			{
+				RemoveFromTrie(g_Trie_NominatedMaps, g_MapNominations[client]);
+			}
+		}
+		
+		g_MapNominations[client][0] = '\0';
+	}
+}
+
+// Events
+// Note: These are just the shared events
+
+public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
+{
+	++roundCount;
+	
+	// Missing logic to actually check the rounds and start the vote.
+}
+
 // Natives
 
-// native FunctionWithArg(const String:param1[]);
-public Native_FunctionWithArg(Handle:plugin, numParams)
+public Native_AddMapFilter(Handle:plugin, numParams)
 {
-	// for const Strings
-	new size;
-	GetNativeStringLength(1, size);
-	decl String:param1[size+1];
-	GetNativeString(1, param1, size+1);
-}
-
-// native bool:FunctionWithoutArg();
-public Native_FunctionWithoutArg(Handle:plugin, numParams)
-{
-	return true;
-}
-
-// native RegisterCallback(ACallback);
-public Native_RegisterCallback(Handle:plugin, numParams)
-{
-}
+	new Function:func = GetNativeCell(1);
 	
-// native UnregisterCallback(ACallback);
-public Native_UnregisterCallback(Handle:plugin, numParams)
-{
+	return AddToForward(g_Forward_MapFilter, plugin, func);
 }
-*/
 
+public Native_RemoveMapFilter(Handle:plugin, numParams)
+{
+	new Function:func = GetNativeCell(1);
+	
+	return RemoveFromForward(g_Forward_MapFilter, plugin, func);
+}
