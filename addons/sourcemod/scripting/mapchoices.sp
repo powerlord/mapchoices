@@ -31,9 +31,12 @@
  * Version: $Id$
  */
 #include <sourcemod>
+#include "include/mapchoices" // Include our own file to gain access to enums and the like
 #pragma semicolon 1
 
 #define VERSION "1.0.0 alpha 1"
+
+#define CONFIGFILE "configs/mapchoices.cfg"
 
 new roundCount;
 new Handle:g_Trie_NominatedMaps;
@@ -72,11 +75,24 @@ public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	RegPluginLibrary("mapchoices");
 	
+	new Handle:kvConfig = CreateKeyValues("MapChoices");
+	
+	new String:configFile[PLATFORM_MAX_PATH+1];
+	
+	BuildPath(Path_SM, configFile, sizeof(configFile), "%s", CONFIGFILE);
+	if (!FileToKeyValues(kvConfig, configFile))
+	{
+		Format(error, err_max, "Could not read configuration file: %s", configFile);
+		return APLRes_Failure;
+	}
+	
 	return APLRes_Success;
 }
   
 public OnPluginStart()
 {
+	m_ListLookup = CreateTrie();
+	
 	LoadTranslations("common.phrases");
 	LoadTranslations("mapchoices.phrases");
 	
@@ -100,9 +116,6 @@ public OnPluginStart()
 
 public OnConfigsExecuted()
 {
-	new String:configFile[PLATFORM_MAX_PATH+1];
-	
-	BuildPath(Path_SM, configFile, sizeof(configFile), "configs/mapchoices.cfg");
 }
 
 public OnClientDisconnect(client)
@@ -126,6 +139,48 @@ public OnClientDisconnect(client)
 	}
 }
 
+StartVote(MapChoices_MapChange:when, Handle:mapList=INVALID_HANDLE)
+{
+	if (mapList == INVALID_HANDLE)
+	{
+		//GetRemainingChoices("mapchoices");
+	}
+}
+
+bool:CheckMapFilter(const String:map[])
+{
+	new Action:result = Plugin_Continue;
+	Call_StartForward(g_Forward_MapFilter);
+	Call_PushString(map);
+	
+}
+
+// Ugh, caching is going to be a mess... might want to reconsider caching and just make this a general method for reading from the appropriate config file.
+Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY)
+{
+	new Handle:kvConfig = CreateKeyValues("MapChoices");
+	
+	new String:configFile[PLATFORM_MAX_PATH+1];
+	
+	BuildPath(Path_SM, configFile, sizeof(configFile), "%s", CONFIGFILE);
+	if (!FileToKeyValues(kvConfig, configFile))
+	{
+		SetFailState("Could not read configuration file: %s", configFile);
+	}
+	
+}
+
+Handle:GetMapListFromFile(const String:filename[])
+{
+	
+}
+
+LocateConfigurationFile(const String:section[], String:filename[], maxlength)
+{
+	
+}
+
+
 // Events
 // Note: These are just the shared events
 
@@ -137,6 +192,12 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 }
 
 // Natives
+
+public Native_ReadMapChoicesList(Handle:plugin, numParams)
+{
+	new Handle:mapKv = GetNativeCell(1);
+	new serial = GetNativeCellRef(2);
+}
 
 public Native_AddMapFilter(Handle:plugin, numParams)
 {
@@ -150,4 +211,12 @@ public Native_RemoveMapFilter(Handle:plugin, numParams)
 	new Function:func = GetNativeCell(1);
 	
 	return RemoveFromForward(g_Forward_MapFilter, plugin, func);
+}
+
+public Native_StartVote(Handle:plugin, numParams)
+{
+	new MapChoices_MapChange:when = GetNativeCell(1);
+	new Handle:mapList = GetNativeCell(2);
+	
+	StartVote(when, mapList);
 }

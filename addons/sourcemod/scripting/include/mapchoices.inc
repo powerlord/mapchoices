@@ -55,7 +55,20 @@ enum MapChoices_MapChange
 	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
 };
 
-
+/**
+ * Loads a MapChoices list to a KeyValues file
+ * 
+ * This is the MapChoices equivalent to SourceMod's ReadMapList.
+ * 
+ * A map list is a KeyValues file of maps and keys describing the maps to MapChoices and its subplugins.
+ * MapChoices allows easy configuration of maplists through addons/sourcemod/configs/mapchoices.cfg.  Each entry is
+ * given a name and a file (for example, "mapchoices" => "mapchoices.txt"), or a name and a redirection
+ * (for example, "mapchoices" => "default".  This native will read a map list entry,
+ * cache the file, and return they KeyValues of maps it holds.
+ * 
+ * 
+ */
+native Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
 
 /**
  * Attempt to add a map to the nomination list
@@ -133,6 +146,7 @@ forward MapChoices_NominationRemoved(const String:map[], owner);
 
 functag public MapChoices_HandlerStartVote(Handle:mapList);
 functag public MapChoices_HandlerCancelVote();
+functag public bool:MapChoices_HandlerIsVoteInProgress();
 
 /**
  * Override the main vote system with a different one.
@@ -142,10 +156,9 @@ functag public MapChoices_HandlerCancelVote();
  * @param startVote	The function to call when a vote starts.
  * @param cancelVote	The function to call when a vote is canceled.
  * @param voteLimit	The number of items that can be in a vote.
- * 
  */
-native MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, voteLimit=0);
-native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote);
+native MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress, voteLimit=0);
+native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress);
 
 /**
  * Allow the named map to be played?
