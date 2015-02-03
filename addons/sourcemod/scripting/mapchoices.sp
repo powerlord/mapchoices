@@ -60,6 +60,13 @@ new Handle:g_Forward_HandlerVoteStart;
 new Handle:g_Forward_HandlerCancelVote;
 new Handle:g_Forward_MapFilter;
 
+
+
+
+new Handle:m_ListLookup;
+
+#include "mapchoices/parse-mapchoices-config.inc"
+
 public Plugin:myinfo = {
 	name			= "MapChoices",
 	author			= "Powerlord",
@@ -152,11 +159,12 @@ bool:CheckMapFilter(const String:map[])
 	new Action:result = Plugin_Continue;
 	Call_StartForward(g_Forward_MapFilter);
 	Call_PushString(map);
-	
+	Call_Finish(result);
+	//TODO What we do in subplugins
 }
 
 // Ugh, caching is going to be a mess... might want to reconsider caching and just make this a general method for reading from the appropriate config file.
-Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY)
+stock Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY)
 {
 	new Handle:kvConfig = CreateKeyValues("MapChoices");
 	
@@ -170,12 +178,12 @@ Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[
 	
 }
 
-Handle:GetMapListFromFile(const String:filename[])
+stock Handle:GetMapListFromFile(const String:filename[])
 {
 	
 }
 
-LocateConfigurationFile(const String:section[], String:filename[], maxlength)
+stock LocateConfigurationFile(const String:section[], String:filename[], maxlength)
 {
 	
 }
@@ -219,4 +227,36 @@ public Native_StartVote(Handle:plugin, numParams)
 	new Handle:mapList = GetNativeCell(2);
 	
 	StartVote(when, mapList);
+}
+
+// native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
+public Native_ReadMapList(Handle:plugin, numParams)
+{
+	new Handle:mapList = GetNativeCell(1);
+	new serial = GetNativeCellRef(2);
+	new flags = GetNativeCell(4);
+	
+	new String:str[MAX_GROUP_LENGTH+1];
+	GetNativeString(3, str, sizeof(str));
+	
+	new Handle:pArray;
+	new Handle:pNewArray;
+	
+	UpdateCache();
+	
+	if ((pNewArray = UpdateMapList(pArray, str, serial, flags)) == INVALID_HANDLE)
+	{
+		return INVALID_HANDLE;
+	}
+
+	if (mapList == INVALID_HANDLE)
+	{
+		new Handle:tempList = CreateArray(mapdata_t);
+		mapList = CloneHandle(tempList, plugin); // Changes ownership
+		CloseHandle(tempList);
+	}
+	
+	return mapList;
+	
+	// TODO Remaining map logic
 }

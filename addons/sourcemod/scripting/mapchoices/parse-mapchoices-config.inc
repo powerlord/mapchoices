@@ -46,7 +46,7 @@
 	bool:bIsCompat,
 	bool:bIsPath,
 	last_modified_time,
-	Handle:hKv,
+	Handle:pArray,
 	serial,
 	String:sName[PLATFORM_MAX_PATH],
 	String:sPath[PLATFORM_MAX_PATH],
@@ -161,9 +161,9 @@ public UpdateCache()
 		if (FindStringInArray(m_ListLookupNames, localArray[sName]) != -1)
 		{
 			/* The compatibility shim is no longer needed. */
-			if (localArray[hKv] != INVALID_HANDLE)
+			if (localArray[pArray] != INVALID_HANDLE)
 			{
-				CloseHandle(localArray[hKv]);
+				CloseHandle(localArray[pArray]);
 			}
 		}
 		else
@@ -177,14 +177,52 @@ public UpdateCache()
 	CloseHandle(compat);
 }
 
-Handle:UpdateMapList(Handle:pUseArray, const String:name[], pSerial, flags)
+Handle:UpdateMapList(Handle:pUseArray, const String:name[], &pSerial, flags)
 {
 	new change_serial;
-	Handle:pNewArray;
-	bool:success;
-	bool:free_new_array;
+	new Handle:pNewArray;
+	new bool:success;
 	
+	new bool:free_new_array;
 	
+	if ((success = GetMapList(pNewArray, name, change_serial)) == false)
+	{
+		if ((flags & MAPLIST_FLAG_NO_DEFAULT) != MAPLIST_FLAG_NO_DEFAULT)
+		{
+			/* If this list failed, and it's not the default, try the default.
+			 */
+			if (strcmp(name, "default") != 0)
+			{
+				success = GetMapList(pNewArray, name, change_serial);
+			}
+			/* If either of the last two conditions failed, try again if we can */
+			if (!success && strcmp(name, "mapcyclefile") != 0)
+			{
+				success = GetMapList(pNewArray, "mapcyclefile", change_serial);
+			}
+		}
+	}
+	
+	/* If there was a success, and the serial has not changed, bail out */
+	if (success && pSerial == change_serial)
+	{
+		return INVALID_HANDLE;
+	}
+	
+	/**
+	 * If there was a success but no map list, we need to look in the maps folder
+	 * If there was a failure and the flag is specified, we need to look in the maps folder
+	 */
+	if ((success && pNewArray == INVALID_HANDLE)
+		|| (!success && (flags & MAPLIST_FLAG_MAPSFOLDER)))
+	{
+		pNewArray = CreateArray(ByteCountToCells(PLATFORM_MAX_PATH));
+		free_new_array = true;
+		
+		new blk;
+		
+		// TODO Find all files
+	}
 }
 
 bool:GetMapList(Handle:ppKv, const String:name[], &pSerial)
@@ -212,12 +250,12 @@ bool:GetMapList(Handle:ppKv, const String:name[], &pSerial)
 		// TODO: logic to read file here
 	}
 	
-	if (pMapList[hKv] == INVALID_HANDLE)
+	if (pMapList[pArray] == INVALID_HANDLE)
 	{
 		return false;
 	}
 	pSerial = pMapList[serial];
-	ppKv = pMapList[hKv];
+	ppKv = pMapList[pArray];
 	
 	return true;
 }
@@ -241,9 +279,9 @@ DumpCache(Handle:compat_list)
 		}
 		else
 		{
-			if (localArray[hKv] != INVALID_HANDLE)
+			if (localArray[pArray] != INVALID_HANDLE)
 			{
-				CloseHandle(localArray[hKv]);
+				CloseHandle(localArray[pArray]);
 			}
 		}
 		RemoveFromArray(m_MapLists, i);
@@ -260,12 +298,12 @@ ResetMapList(mapList[])
 	mapList[last_modified_time] = 0;
 	// Since we store this for later, don't close it
 	/*
-	if (mapList[hKv] != INVALID_HANDLE)
+	if (mapList[pArray] != INVALID_HANDLE)
 	{
-		CloseHandle(mapList[hKv]);
+		CloseHandle(mapList[pArray]);
 	}
 	*/
-	mapList[hKv] = INVALID_HANDLE;
+	mapList[pArray] = INVALID_HANDLE;
 	mapList[serial] = -1;
 	mapList[sName] = "";
 	mapList[sPath] = "";

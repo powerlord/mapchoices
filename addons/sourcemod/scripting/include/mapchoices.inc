@@ -39,6 +39,8 @@
 // Plugin 1.0 series
 
 #define MAPCHOICES_NOCHANGE "__nochange__"
+#define MAX_GROUP_LENGTH 64
+#define MAX_MAP_ATTRIBUTES 16
 
 enum MapChoices_NominateResult
 {
@@ -46,13 +48,20 @@ enum MapChoices_NominateResult
 	NominateResult_Rejected,	/** The map was rejected by a map filter */
 	NominateResult_InvalidMap,	/** The map doesn't exist. */
 	NominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
-}
+};
 
 enum MapChoices_MapChange
 {
 	MapChoicesMapChange_Instant,		/** Change map as soon as the voting results have come in */
 	MapChoicesMapChange_RoundEnd,		/** Change map at the end of the round */
 	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
+};
+
+enum mapdata_t
+{
+	String:MapData_Map[PLATFORM_MAX_PATH+1],
+	String:MapData_MapGroup[MAX_GROUP_LENGTH+1],
+	Handle:MapData_MapAttributes,
 };
 
 /**
@@ -68,7 +77,31 @@ enum MapChoices_MapChange
  * 
  * 
  */
-native Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
+native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
+
+/*
+ * Clean up a map list Handle
+ * 
+ * A map list Handle is an adt_array of mapdata_t entries.
+ * mapdata_t contains a Trie of MapAttributes, which is CloneHandled to the calling plugin
+ */
+stock CloseMapList(&Handle:mapList)
+{
+	if (mapList == INVALID_HANDLE)
+	{
+		return;
+	}
+	
+	new size = GetArraySize(mapList);
+	for (new i = 0 ; i < size; i++)
+	{
+		new mapData[mapdata_t];
+		GetArrayArray(mapList, i, mapData, sizeof(mapData));
+		CloseHandle(mapData[MapData_MapAttributes]);
+	}
+	CloseHandle(mapList);
+	mapList = INVALID_HANDLE;
+}
 
 /**
  * Attempt to add a map to the nomination list
@@ -102,11 +135,10 @@ native MapChoices_NominateResult:MapChoices_Nominate(const String:map[], owner);
  * Start a map vote.
  * 
  * @param when		When should the map change?
- * @param mapList		Don't get too attached to this arg as it may go away.
- * 					A holdback from the MapChooser days.
- * 
+ * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
+ * @param mapGroup	Which mapgroup should we use?
  */
-native MapChoices_StartVote(MapChoices_MapChange:when, Handle:mapList=INVALID_HANDLE);
+native MapChoices_StartVote(MapChoices_MapChange:when, Handle:mapList=INVALID_HANDLE, const String:mapGroup[]="mapchoices");
 
 /**
  * A map vote started.
@@ -153,9 +185,10 @@ functag public bool:MapChoices_HandlerIsVoteInProgress();
  * This really exists for NativeVotes, so unless you have some use for it,
  * you really shouldn't be messing with it.
  * 
- * @param startVote	The function to call when a vote starts.
- * @param cancelVote	The function to call when a vote is canceled.
- * @param voteLimit	The number of items that can be in a vote.
+ * @param startVote		The function to call when a vote starts.
+ * @param cancelVote		The function to call when a vote is canceled.
+ * @param isVoteInProgress	The function to call to determine whether or not a vote is in progress
+ * @param voteLimit		The number of items that can be in a vote.
  */
 native MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress, voteLimit=0);
 native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress);
@@ -163,15 +196,29 @@ native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, M
 /**
  * Allow the named map to be played?
  * 
- * @param map		The map name from a map list
- * @param data	A KeyValues structure with the key for the map already selected
+ * @param mapGroup	The group the map is in
+ * @param map			The map name from a map list
+ * @param data		A Trie of keys and values for the selected map
  * 
- * @return 		Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+ * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
  *
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  */
-functag public Action:MapFilter(const String:map[], Handle:data);
+functag public Action:MapFilter(const String:mapGroup[], const String:map[], Handle:data);
+
+/**
+ * Get a Trie of keys and values for a map.
+ * This is the same trie that would be passed to a map filter.
+ * 
+ * @param map			The map whose data you want
+ * @param mapGroup	The mapGroup for the map whose data you want
+ * @param data		A Trie Handle.
+ * 
+ * @return			true if we have data for a map, false otherwise
+ * @error			if data is INVALID_HANDLE
+ */
+native bool:MapChoices_GetMapData(const String:mapGroup[], const String:map[], Handle:data);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
@@ -181,7 +228,7 @@ functag public Action:MapFilter(const String:map[], Handle:data);
  * 
  * @return 		true if the filter was added
  */
-native bool:MapChoices_AddMapFilter(MapFilter:filter);
+native bool:MapChoices_RegisterMapFilter(MapFilter:filter);
 
 /**
  * Unregister a map filter.
@@ -190,7 +237,27 @@ native bool:MapChoices_AddMapFilter(MapFilter:filter);
  * 
  * @return 		true if the filter was removed, false if it wasn't registered
  */
-native bool:MapChoices_RemoveMapFilter(MapFilter:filter);
+native bool:MapChoices_UnregisterMapFilter(MapFilter:filter);
+
+/**
+ * Register a game plugin
+ * 
+ * At the moment, this is just present so we can stop the main plugin from processing round_end events
+ * 
+ * @param overrideRoundEnd	Prevent normal round end hooks from firing
+ * 
+ * @return		true if plugin was registered.
+ */
+native bool:RegisterGamePlugin(bool:overrideRoundEnd);
+
+/**
+ * Unregister a game plugin
+ * 
+ * @param overrideRoundEnd	Prevent normal round end hooks from firing
+ * 
+ * @return		true if plugin was registered.
+ */
+native bool:UnregisterGamePlugin();
 
 /**
  * Remove the path from the map name
@@ -292,8 +359,9 @@ public SharedPlugin:__pl_mapchoices =
 public __pl_mapchoices_SetNTVOptional()
 {
 	MarkNativeAsOptional("MapChoices_RegisterVoteHandler");
-	MarkNativeAsOptional("MapChoices_AddMapFilter");
-	MarkNativeAsOptional("MapChoices_RemoveMapFilter");
+	MarkNativeAsOptional("MapChoices_UnregisterVoteHandler");
+	MarkNativeAsOptional("MapChoices_RegisterMapFilter");
+	MarkNativeAsOptional("MapChoices_UnregisterMapFilter");
 	
 }
 #endif
