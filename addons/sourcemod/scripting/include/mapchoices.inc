@@ -42,7 +42,7 @@
 #define MAX_GROUP_LENGTH 64
 #define MAX_MAP_ATTRIBUTES 16
 
-enum MapChoices_NominateResult
+enum MapChoices_NominateResult:
 {
 	NominateResult_Added,		/** The map was added */
 	NominateResult_Rejected,	/** The map was rejected by a map filter */
@@ -50,13 +50,14 @@ enum MapChoices_NominateResult
 	NominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
 };
 
-enum MapChoices_MapChange
+enum MapChoices_MapChange:
 {
 	MapChoicesMapChange_Instant,		/** Change map as soon as the voting results have come in */
 	MapChoicesMapChange_RoundEnd,		/** Change map at the end of the round */
 	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
 };
 
+// Classic-style enum because it's an anum-struct
 enum mapdata_t
 {
 	String:MapData_Map[PLATFORM_MAX_PATH+1],
@@ -77,7 +78,7 @@ enum mapdata_t
  * 
  * 
  */
-native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
+native ArrayList MapChoices_ReadMapList(ArrayList mapList=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
 /*
  * Clean up a map list Handle
@@ -85,22 +86,21 @@ native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, c
  * A map list Handle is an adt_array of mapdata_t entries.
  * mapdata_t contains a Trie of MapAttributes, which is CloneHandled to the calling plugin
  */
-stock CloseMapList(&Handle:mapList)
+stock void CloseMapList(ArrayList &mapList)
 {
-	if (mapList == INVALID_HANDLE)
+	if (mapList == null)
 	{
 		return;
 	}
 	
-	new size = GetArraySize(mapList);
-	for (new i = 0 ; i < size; i++)
+	for (new i = 0 ; i < mapList.Length; i++)
 	{
 		new mapData[mapdata_t];
-		GetArrayArray(mapList, i, mapData, sizeof(mapData));
-		CloseHandle(mapData[MapData_MapAttributes]);
+		mapList.GetArray(i, mapData, sizeof(mapData));
+		delete mapData[MapData_MapAttributes];
 	}
-	CloseHandle(mapList);
-	mapList = INVALID_HANDLE;
+	delete mapList;
+	mapList = null;
 }
 
 /**
@@ -113,7 +113,7 @@ stock CloseMapList(&Handle:mapList)
  * @param owner	The person nominating the map. Use 0 for constant nominations.
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult:MapChoices_Nominate(const String:map[], owner);
+native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner);
 
 /**
  * NOTE:  This may never be implemented until I see a good reason to keep it.
@@ -121,7 +121,7 @@ native MapChoices_NominateResult:MapChoices_Nominate(const String:map[], owner);
  * 
  * @param map		Map to remove.
  */
-//native bool:MapChoices_RemoveNominationByMap(const String:map[]);
+//native bool MapChoices_RemoveNominationByMap(const char[] map);
 
 /**
  * NOTE: This may never be implemented until I see a good reason to keep it.  Core can track this on its own.
@@ -129,7 +129,7 @@ native MapChoices_NominateResult:MapChoices_Nominate(const String:map[], owner);
  * 
  * @param owner	Client whose nomination we will remove.
  */
-//native bool:MapChoices_RemoveNominationByClient(client);
+//native bool MapChoices_RemoveNominationByClient(int client);
 
 /**
  * Start a map vote.
@@ -138,12 +138,12 @@ native MapChoices_NominateResult:MapChoices_Nominate(const String:map[], owner);
  * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
  * @param mapGroup	Which mapgroup should we use?
  */
-native MapChoices_StartVote(MapChoices_MapChange:when, Handle:mapList=INVALID_HANDLE, const String:mapGroup[]="mapchoices");
+native void MapChoices_StartVote(MapChoices_MapChange when, ArrayList mapList=null, const char[] mapGroup="mapchoices");
 
 /**
  * A map vote started.
  */
-forward MapChoices_MapVoteStarted();
+forward void MapChoices_MapVoteStarted();
 
 /**
  * A map vote just ended and a map won.
@@ -154,7 +154,7 @@ forward MapChoices_MapVoteStarted();
  * @param group	If the map was part of a group, which group it was from.
  * @noreturn
  */
-forward MapChoices_MapVoteEnded(const String:map[], bool:instant, const String:group[]);
+forward void MapChoices_MapVoteEnded(const char[] map, bool instant, const char[] group);
 
 /**
  * A map was added to the nominations list.
@@ -163,7 +163,7 @@ forward MapChoices_MapVoteEnded(const String:map[], bool:instant, const String:g
  * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
  * 
  */
-forward MapChoices_NominationAdded(const String:map[], owner);
+forward void MapChoices_NominationAdded(const char[] map, int owner);
 
 /**
  * A map has been removed from the nominations list.
@@ -172,13 +172,13 @@ forward MapChoices_NominationAdded(const String:map[], owner);
  * @param owner	The user that added the map.
  * 
  */
-forward MapChoices_NominationRemoved(const String:map[], owner);
+forward void MapChoices_NominationRemoved(const char[] map, int owner);
 
 // Private forwards for vote managers
 
-functag public MapChoices_HandlerStartVote(Handle:mapList);
-functag public MapChoices_HandlerCancelVote();
-functag public bool:MapChoices_HandlerIsVoteInProgress();
+typedef MapChoices_HandlerStartVote = function void (ArrayList mapList);
+typedef MapChoices_HandlerCancelVote = function void ();
+typedef MapChoices_HandlerIsVoteInProgress = function bool ();
 
 /**
  * Override the main vote system with a different one.
@@ -190,8 +190,8 @@ functag public bool:MapChoices_HandlerIsVoteInProgress();
  * @param isVoteInProgress	The function to call to determine whether or not a vote is in progress
  * @param voteLimit		The number of items that can be in a vote.
  */
-native MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress, voteLimit=0);
-native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, MapChoices_HandlerCancelVote:cancelVote, MapChoices_HandlerIsVoteInProgress:isVoteInProgress);
+native void MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
+native void MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress);
 
 /**
  * Allow the named map to be played?
@@ -205,7 +205,7 @@ native MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote:startVote, M
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  */
-functag public Action:MapFilter(const String:mapGroup[], const String:map[], Handle:data);
+typedef MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap data);
 
 /**
  * Get a Trie of keys and values for a map.
@@ -218,7 +218,7 @@ functag public Action:MapFilter(const String:mapGroup[], const String:map[], Han
  * @return			true if we have data for a map, false otherwise
  * @error			if data is INVALID_HANDLE
  */
-native bool:MapChoices_GetMapData(const String:mapGroup[], const String:map[], Handle:data);
+native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, StringMap data);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
@@ -228,7 +228,7 @@ native bool:MapChoices_GetMapData(const String:mapGroup[], const String:map[], H
  * 
  * @return 		true if the filter was added
  */
-native bool:MapChoices_RegisterMapFilter(MapFilter:filter);
+native bool MapChoices_RegisterMapFilter(MapFilter filter);
 
 /**
  * Unregister a map filter.
@@ -237,7 +237,7 @@ native bool:MapChoices_RegisterMapFilter(MapFilter:filter);
  * 
  * @return 		true if the filter was removed, false if it wasn't registered
  */
-native bool:MapChoices_UnregisterMapFilter(MapFilter:filter);
+native bool MapChoices_UnregisterMapFilter(MapFilter filter);
 
 /**
  * Register a game plugin
@@ -248,7 +248,7 @@ native bool:MapChoices_UnregisterMapFilter(MapFilter:filter);
  * 
  * @return		true if plugin was registered.
  */
-native bool:RegisterGamePlugin(bool:overrideRoundEnd);
+native bool RegisterGamePlugin(bool overrideRoundEnd);
 
 /**
  * Unregister a game plugin
@@ -257,7 +257,7 @@ native bool:RegisterGamePlugin(bool:overrideRoundEnd);
  * 
  * @return		true if plugin was registered.
  */
-native bool:UnregisterGamePlugin();
+native bool UnregisterGamePlugin();
 
 /**
  * Remove the path from the map name
@@ -270,7 +270,7 @@ native bool:UnregisterGamePlugin();
  * 
  * @return			True if path was removed, false if map and destination are the same
  */
-stock bool:RemoveMapPath(const String:map[], String:destination[], maxlen)
+stock bool RemoveMapPath(const char[] map, char[] destination, int maxlen)
 {
 	if (strlen(map) < 1)
 	{
@@ -278,7 +278,7 @@ stock bool:RemoveMapPath(const String:map[], String:destination[], maxlen)
 	}
 	
 	// UNIX paths
-	new pos = FindCharInString(map, '/', true);
+	int pos = FindCharInString(map, '/', true);
 	if (pos == -1)
 	{
 		// Windows paths
@@ -308,10 +308,10 @@ stock bool:RemoveMapPath(const String:map[], String:destination[], maxlen)
  * 
  * @return		true if they're the same map, false if not.
  */
-stock bool:MapEqual(const String:map[], const String:map2[])
+stock bool MapEqual(const char[] map, const char[] map2)
 {
-	new String:pathlessMap[PLATFORM_MAX_PATH];
-	new String:pathlessMap2[PLATFORM_MAX_PATH];
+	char pathlessMap[PLATFORM_MAX_PATH];
+	char pathlessMap2[PLATFORM_MAX_PATH];
 	
 	RemoveMapPath(map, pathlessMap, sizeof(pathlessMap));
 	RemoveMapPath(map2, pathlessMap2, sizeof(pathlessMap2));
@@ -328,13 +328,12 @@ stock bool:MapEqual(const String:map[], const String:map2[])
  *
  * @return 			Array index, or -1 on failure
  */
-stock FindMapStringInMapArray(Handle:array, const String:map[])
+stock FindMapStringInMapArray(ArrayList array, const char[] map)
 {
-	new arrayLen = GetArraySize(array);
-	for (new i = 0; i < arrayLen; i++)
+	for (new i = 0; i < array.Length; i++)
 	{
-		new String:arrayMap[PLATFORM_MAX_PATH];
-		GetArrayString(array, i, arrayMap, sizeof(arrayMap));
+		char arrayMap[PLATFORM_MAX_PATH];
+		array.GetString(i, arrayMap, sizeof(arrayMap));
 		if (MapEqual(arrayMap, map))
 		{
 			return i;
@@ -344,7 +343,7 @@ stock FindMapStringInMapArray(Handle:array, const String:map[])
 	return -1;
 }
 
-public SharedPlugin:__pl_mapchoices = 
+public SharedPlugin __pl_mapchoices = 
 {
 	name = "mapchoices",
 	file = "mapchoices.smx",
@@ -356,7 +355,7 @@ public SharedPlugin:__pl_mapchoices =
 };
 
 #if !defined REQUIRE_PLUGIN
-public __pl_mapchoices_SetNTVOptional()
+public void __pl_mapchoices_SetNTVOptional()
 {
 	MarkNativeAsOptional("MapChoices_RegisterVoteHandler");
 	MarkNativeAsOptional("MapChoices_UnregisterVoteHandler");

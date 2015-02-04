@@ -36,8 +36,6 @@
 
 #define VERSION "1.0.0 alpha 1"
 
-#define CONFIGFILE "configs/mapchoices.cfg"
-
 new roundCount;
 new Handle:g_Trie_NominatedMaps;
 new String:g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
