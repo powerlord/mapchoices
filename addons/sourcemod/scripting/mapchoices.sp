@@ -33,39 +33,39 @@
 #include <sourcemod>
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
 #pragma semicolon 1
-
+#pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
 
-new roundCount;
-new Handle:g_Trie_NominatedMaps;
-new String:g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+int roundCount;
+StringMap g_Trie_NominatedMaps;
+char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 
 //ConVars
-new Handle:g_Cvar_Enabled;
+ConVar g_Cvar_Enabled;
 
 // Valve ConVars
-new Handle:g_Cvar_MaxRounds;
-new Handle:g_Cvar_Timelimit;
+ConVar g_Cvar_MaxRounds;
+ConVar g_Cvar_Timelimit;
 
 // Global Forwards
-new Handle:g_Forward_MapVoteStarted;
-new Handle:g_Forward_MapVoteEnded;
-new Handle:g_Forward_NominationAdded;
-new Handle:g_Forward_NominationRemoved;
+Handle g_Forward_MapVoteStarted;
+Handle g_Forward_MapVoteEnded;
+Handle g_Forward_NominationAdded;
+Handle g_Forward_NominationRemoved;
 
 // Private Forwards
-new Handle:g_Forward_HandlerVoteStart;
-new Handle:g_Forward_HandlerCancelVote;
-new Handle:g_Forward_MapFilter;
+Handle g_Forward_HandlerVoteStart;
+Handle g_Forward_HandlerCancelVote;
+Handle g_Forward_MapFilter;
 
 
 
 
-new Handle:m_ListLookup;
+//new Handle:m_ListLookup;
 
 #include "mapchoices/parse-mapchoices-config.inc"
 
-public Plugin:myinfo = {
+public Plugin myinfo = {
 	name			= "MapChoices",
 	author			= "Powerlord",
 	description		= "An advanced map voting system for SourceMod",
@@ -74,29 +74,17 @@ public Plugin:myinfo = {
 };
 
 // Native Support
-public APLRes:AskPluginLoad2(Handle:myself, bool:late, String:error[], err_max)
+public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	RegPluginLibrary("mapchoices");
-	
-	new Handle:kvConfig = CreateKeyValues("MapChoices");
-	
-	new String:configFile[PLATFORM_MAX_PATH+1];
-	
-	BuildPath(Path_SM, configFile, sizeof(configFile), "%s", CONFIGFILE);
-	if (!FileToKeyValues(kvConfig, configFile))
-	{
-		Format(error, err_max, "Could not read configuration file: %s", configFile);
-		return APLRes_Failure;
-	}
-	
-	return APLRes_Success;
 }
   
-public OnPluginStart()
+public void OnPluginStart()
 {
-	m_ListLookup = CreateTrie();
+	InitializeConfigurationParser();
+	//m_ListLookup = new StringMap();
 	
 	LoadTranslations("common.phrases");
 	LoadTranslations("mapchoices.phrases");
@@ -117,26 +105,27 @@ public OnPluginStart()
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
 	HookEvent("round_end", Event_RoundEnd);
+	
 }
 
-public OnConfigsExecuted()
+public void OnConfigsExecuted()
 {
 }
 
-public OnClientDisconnect(client)
+public void OnClientDisconnect(int client)
 {
 	// Clear the client's nominations
 	if (g_MapNominations[client][0] != '\0')
 	{
-		new count;
-		if (GetTrieValue(g_Trie_NominatedMaps, g_MapNominations[client], count))
+		int count;
+		if (g_Trie_NominatedMaps.GetValue(g_MapNominations[client], count))
 		{
 			--count;
 			
 			// Whoops, no more nominations for this map, so lets remove it.
 			if (count <= 0)
 			{
-				RemoveFromTrie(g_Trie_NominatedMaps, g_MapNominations[client]);
+				g_Trie_NominatedMaps.Remove(g_MapNominations[client]);
 			}
 		}
 		
@@ -144,17 +133,17 @@ public OnClientDisconnect(client)
 	}
 }
 
-StartVote(MapChoices_MapChange:when, Handle:mapList=INVALID_HANDLE)
+void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 {
-	if (mapList == INVALID_HANDLE)
+	if (mapList == null)
 	{
 		//GetRemainingChoices("mapchoices");
 	}
 }
 
-bool:CheckMapFilter(const String:map[])
+bool CheckMapFilter(const char[] map)
 {
-	new Action:result = Plugin_Continue;
+	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_MapFilter);
 	Call_PushString(map);
 	Call_Finish(result);
@@ -162,11 +151,11 @@ bool:CheckMapFilter(const String:map[])
 }
 
 // Ugh, caching is going to be a mess... might want to reconsider caching and just make this a general method for reading from the appropriate config file.
-stock Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY)
+stock ArrayList ReadMapChoicesList(ArrayList kv=null, int &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY)
 {
-	new Handle:kvConfig = CreateKeyValues("MapChoices");
+	KeyValues kvConfig = new KeyValues("MapChoices");
 	
-	new String:configFile[PLATFORM_MAX_PATH+1];
+	char configFile[PLATFORM_MAX_PATH+1];
 	
 	BuildPath(Path_SM, configFile, sizeof(configFile), "%s", CONFIGFILE);
 	if (!FileToKeyValues(kvConfig, configFile))
@@ -176,12 +165,12 @@ stock Handle:ReadMapChoicesList(Handle:kv=INVALID_HANDLE, &serial=1, const Strin
 	
 }
 
-stock Handle:GetMapListFromFile(const String:filename[])
+stock ArrayList GetMapListFromFile(const char[] filename)
 {
 	
 }
 
-stock LocateConfigurationFile(const String:section[], String:filename[], maxlength)
+stock void LocateConfigurationFile(const char[] section, char[] filename, int maxlength)
 {
 	
 }
@@ -190,7 +179,7 @@ stock LocateConfigurationFile(const String:section[], String:filename[], maxleng
 // Events
 // Note: These are just the shared events
 
-public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
+public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
 	++roundCount;
 	
@@ -199,62 +188,66 @@ public Event_RoundEnd(Handle:event, const String:name[], bool:dontBroadcast)
 
 // Natives
 
-public Native_ReadMapChoicesList(Handle:plugin, numParams)
+public int Native_ReadMapChoicesList(Handle plugin, int numParams)
 {
-	new Handle:mapKv = GetNativeCell(1);
-	new serial = GetNativeCellRef(2);
+	Handle mapKv = GetNativeCell(1);
+	int serial = GetNativeCellRef(2);
 }
 
-public Native_AddMapFilter(Handle:plugin, numParams)
+public int Native_AddMapFilter(Handle plugin, int numParams)
 {
-	new Function:func = GetNativeCell(1);
+	Function func = GetNativeCell(1);
 	
 	return AddToForward(g_Forward_MapFilter, plugin, func);
 }
 
-public Native_RemoveMapFilter(Handle:plugin, numParams)
+public int Native_RemoveMapFilter(Handle plugin, int numParams)
 {
-	new Function:func = GetNativeCell(1);
+	Function func = GetNativeCell(1);
 	
 	return RemoveFromForward(g_Forward_MapFilter, plugin, func);
 }
 
-public Native_StartVote(Handle:plugin, numParams)
+public int Native_StartVote(Handle plugin, int numParams)
 {
-	new MapChoices_MapChange:when = GetNativeCell(1);
-	new Handle:mapList = GetNativeCell(2);
+	MapChoices_MapChange when = GetNativeCell(1);
+	ArrayList mapList = view_as<ArrayList>(GetNativeCell(2));
 	
 	StartVote(when, mapList);
 }
 
 // native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
-public Native_ReadMapList(Handle:plugin, numParams)
+public int Native_ReadMapList(Handle plugin, int numParams)
 {
-	new Handle:mapList = GetNativeCell(1);
-	new serial = GetNativeCellRef(2);
-	new flags = GetNativeCell(4);
+	ArrayList mapList = view_as<ArrayList>(GetNativeCell(1));
+	int serial = GetNativeCellRef(2);
+	int flags = GetNativeCell(4);
 	
-	new String:str[MAX_GROUP_LENGTH+1];
-	GetNativeString(3, str, sizeof(str));
+	int length;
+	GetNativeStringLength(3, length);
+	char[] str = new char[length+1];
+	GetNativeString(3, str, length+1);
 	
-	new Handle:pArray;
-	new Handle:pNewArray;
+	ArrayList pArray;
+	ArrayList pNewArray;
 	
 	UpdateCache();
 	
-	if ((pNewArray = UpdateMapList(pArray, str, serial, flags)) == INVALID_HANDLE)
+	if ((pNewArray = UpdateMapList(mapList, str, serial, flags)) == null)
 	{
-		return INVALID_HANDLE;
+		return view_as<int>(INVALID_HANDLE);
 	}
 
+	SetNativeCellRef(2, serial); // Update serial with the copy from UpdateMapList
+	
+	/* If the user wanted a new array, create it now. */
 	if (mapList == INVALID_HANDLE)
 	{
-		new Handle:tempList = CreateArray(mapdata_t);
-		mapList = CloneHandle(tempList, plugin); // Changes ownership
-		CloseHandle(tempList);
+		mapList = view_as<ArrayList>(CloneHandle(pNewArray, plugin)); // Changes ownership
+		delete pNewArray; // Delete our copy of this handle
 	}
 	
-	return mapList;
+	return view_as<int>(mapList);
 	
 	// TODO Remaining map logic
 }

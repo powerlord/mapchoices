@@ -57,12 +57,14 @@ enum MapChoices_MapChange:
 	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
 };
 
-// Classic-style enum because it's an anum-struct
+// Classic-style enum because it's an enum-struct
+// Used to store data about a map.
+// Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
 enum mapdata_t
 {
 	String:MapData_Map[PLATFORM_MAX_PATH+1],
 	String:MapData_MapGroup[MAX_GROUP_LENGTH+1],
-	Handle:MapData_MapAttributes,
+	StringMap:MapData_MapAttributes,
 };
 
 /**

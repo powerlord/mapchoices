@@ -31,16 +31,28 @@
  * Version: $Id$
  */
 
-// This file is for parsing SMC constructs, such as configs/mapchoices.cfg
+/**
+ * This file is HEAVILY influenced by SourceMod's smn_maplists.cpp.
+ * 
+ * This file exists almost exclusively to replace core's ReadMapList with our 
+ * own version that also works for advanced map lists.
+ * 
+ * This means some "creative" changes had to be made to make it work like the
+ * C++ version does.
+ */
  
+// This file is for parsing SMC constructs, such as configs/mapchoices.cfg
+//#include "../include/mapchoices" // Include our own file to gain access to enums and the like
+
 #define CONFIGFILE "configs/mapchoices.cfg"
 
+//#pragma newdecls required
 enum MapListState:
- {
+{
 	MPS_NONE,
 	MPS_GLOBAL,
 	MPS_MAPLIST,
- }
+}
 
 enum MapListType:
 {
@@ -51,27 +63,31 @@ enum MapListType:
 // Old style enum for enum-struct
 enum maplist_info_t
 {
-	MapListType:mapListType,
-	bool:bInitialized,
-	bool:bIsCompat,
-	bool:bIsPath,
-	last_modified_time,
-	Handle:pArray,
-	serial,
-	String:sName[PLATFORM_MAX_PATH],
-	String:sPath[PLATFORM_MAX_PATH],
+	MapListType:maplist_Type,
+	bool:maplist_bInitialized,
+	bool:maplist_bIsCompat,
+	bool:maplist_bIsPath,
+	maplist_last_modified_time,
+	ArrayList:maplist_pArray,				/**< ArrayList of mapdata_t */
+	maplist_serial,
+	String:maplist_name[PLATFORM_MAX_PATH],
+	String:maplist_path[PLATFORM_MAX_PATH],
 }
 
 static char m_ConfigFile[PLATFORM_MAX_PATH]; 
 static int m_ConfigLastChanged;
-static StringMap m_ListLookup; // Trie of array (maplist_info_t)
-//static ArrayList m_ListLookupNames; // Tries in 1.6 STILL don't support key lookups without just fetching the values back, so fake it
-static ArrayList m_MapLists; // Array of array (maplist_info_t)
+static StringMap m_ListLookup; /**< StringMap of maplist_info_t */
+static ArrayList m_MapLists; /**< ArrayList of maplist_info_t */
 static MapListState m_CurState = MPS_NONE;
 static int m_IgnoreLevel;
 static int m_pCurMapList[maplist_info_t];
-static int m_nSerialChanged;
+static int m_nSerialChange;
 static ConVar m_pMapCycleFile;
+
+void InitializeConfigurationParser()
+{
+	BuildPath(Path_SM, m_ConfigFile, sizeof(m_ConfigFile), "%s", CONFIGFILE);
+}
 
 void GetMapCycleFilePath(char[] pBuffer, int maxlen)
 {
@@ -89,7 +105,7 @@ void GetMapCycleFilePath(char[] pBuffer, int maxlen)
 	
 	switch (engineType)
 	{
-		case Engine_TF2, Engine_CSS, Engine_DODS, Engine_HL2DM:
+		case Engine_TF2, Engine_CSS, Engine_DODS, Engine_HL2DM, Engine_SDK2013:
 		{
 			// These found games and Source SDK 2013 do a lookup in this order; so shall we.
 			// Note: Source SDK 2013 is left out in the SM core in 1.6, check 1.7 to see what it does.
@@ -121,48 +137,42 @@ void AddOrUpdateDefault(const char[] name, const char[] file)
 	if (!m_ListLookup.GetArray(name, pMapList, sizeof(pMapList)))
 	{
 		pMapList = new pMapList[maplist_info_t];
-		pMapList[bIsCompat] = true;
-		pMapList[bIsPath] = true;
-		pMapList[last_modified_time] = true;
-		strcopy(pMapList[sName], sizeof(pMapList[sName]), name);
-		pMapList[pArray] = null;
-		strcopy(pMapList[sPath], sizeof(pMapList[sPath]), file);
-		pMapList[serial] = 0;
+		pMapList[maplist_bIsCompat] = true;
+		pMapList[maplist_bIsPath] = true;
+		pMapList[maplist_last_modified_time] = true;
+		strcopy(pMapList[maplist_name], sizeof(pMapList[maplist_name]), name);
+		pMapList[maplist_pArray] = null;
+		strcopy(pMapList[maplist_path], sizeof(pMapList[maplist_path]), file);
+		pMapList[maplist_serial] = 0;
 		m_ListLookup.SetArray(name, pMapList, sizeof(pMapList));
 		m_MapLists.PushArray(pMapList, sizeof(pMapList));
 		return;
 	}
 	
 	/* Don't modify if it's from the config file */
-	if (!pMapList[bIsCompat])
+	if (!pMapList[maplist_bIsCompat])
 		return;
 	
 	strcopy(path, sizeof(path), file);
 	
 	/* If the path matches, don't reset the serial/time */
-	if (strcmp(path, pMapList[sPath]) == 0)
+	if (strcmp(path, pMapList[maplist_path]) == 0)
 		return;
 		
-	strcopy(pMapList[sPath], sizeof(pMapList[sPath]), path);
-	pMapList[bIsPath] = true;
-	pMapList[last_modified_time] = 0;
-	pMapList[serial] = 0;
+	strcopy(pMapList[maplist_path], sizeof(pMapList[maplist_path]), path);
+	pMapList[maplist_bIsPath] = true;
+	pMapList[maplist_last_modified_time] = 0;
+	pMapList[maplist_serial] = 0;
 	
 	// This line may be extraneous, test to verify this
 	m_ListLookup.SetArray(name, pMapList, sizeof(pMapList));
 }
 
-public UpdateCache()
+public void UpdateCache()
 {
 	bool fileFound;
-	new SMCError:error;
-	new fileTime;
-	
-	// Initialize m_ConfigFile since we have no constructor
-	if (m_ConfigFile[0] == '\0')
-	{
-		BuildPath(Path_SM, m_ConfigFile, sizeof(m_ConfigFile), "%s", CONFIGFILE);
-	}
+	SMCError error;
+	int fileTime;
 	
 	fileTime = GetFileTime(m_ConfigFile, FileTime_LastChange);
 	
@@ -192,15 +202,15 @@ public UpdateCache()
 	/* All this to add the default entry back in */
 	int pDefList[maplist_info_t];
 	
-	pDefList[mapListType] = MapList_Classic; // We mark this as a classic-style maplist
-	pDefList[bIsPath] = true;
-	strcopy(pDefList[sName], sizeof(pDefList[sName]), "mapcyclefile");
+	pDefList[maplist_Type] = MapList_Classic; // We mark this as a classic-style maplist
+	pDefList[maplist_bIsPath] = true;
+	strcopy(pDefList[maplist_name], sizeof(pDefList[maplist_name]), "mapcyclefile");
 	
-	GetMapCycleFilePath(pDefList[sPath], sizeof(pDefList[sPath]));
+	GetMapCycleFilePath(pDefList[maplist_path], sizeof(pDefList[maplist_path]));
 	
-	pDefList[last_modified_time] = 0;
-	pDefList[pArray] = null;
-	pDefList[serial] = 0;
+	pDefList[maplist_last_modified_time] = 0;
+	pDefList[maplist_pArray] = null;
+	pDefList[maplist_serial] = 0;
 	
 	m_ListLookup.SetArray("mapcyclefile", pDefList, sizeof(pDefList));
 	m_MapLists.PushArray(pDefList);
@@ -208,15 +218,15 @@ public UpdateCache()
 	/* Now parse the config file even if we don't know about it.
 	 * This will give us a nice error message.
 	 */
-	SMCParser parser = InitializeConfigParser();
+	SMCParser parser = GetMapListsCfgSMCParser();
 	
 	int line;
 	int col;
 	
-	if ((error = SMC_ParseFile(parser, m_ConfigFile, line, col))
+	if ((error = parser.ParseFile(m_ConfigFile, line, col))
 		!= SMCError_Okay)
 	{
-		new String:errmsg[256];
+		char errmsg[256];
 		SMC_GetErrorString(error, errmsg, sizeof(errmsg));
 		
 		LogError("[MC] Could not parse file \"%s\"", m_ConfigFile);
@@ -228,22 +238,22 @@ public UpdateCache()
 	}
 	
 	/* Now, re-add compat stuff back in if we can. */
-	for (new i = 0; i < compat.Length; i++)
+	for (int i = 0; i < compat.Length; i++)
 	{
-		new localArray[maplist_info_t];
+		int localArray[maplist_info_t];
 		GetArrayArray(compat, i, localArray, sizeof(localArray));
 		
-		if (IsKeyInStringMap(m_ListLookup, localArray[sName]))
+		if (IsKeyInStringMap(m_ListLookup, localArray[maplist_name]))
 		{
 			/* The compatibility shim is no longer needed. */
-			if (localArray[pArray] != null)
+			if (localArray[maplist_pArray] != null)
 			{
-				delete localArray[pArray];
+				delete localArray[maplist_pArray];
 			}
 		}
 		else
 		{
-			m_ListLookup.SetArray(localArray[sName], localArray, sizeof(localArray));
+			m_ListLookup.SetArray(localArray[maplist_name], localArray, sizeof(localArray));
 			m_MapLists.PushArray(localArray, sizeof(localArray));
 		}
 	}
@@ -251,13 +261,13 @@ public UpdateCache()
 	delete compat;
 }
 
-Handle:UpdateMapList(Handle:pUseArray, const String:name[], &pSerial, flags)
+ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, int flags)
 {
-	new change_serial;
-	new Handle:pNewArray;
-	new bool:success;
+	int change_serial;
+	ArrayList pNewArray;
+	bool success;
 	
-	new bool:free_new_array;
+	bool free_new_array = false;
 	
 	if ((success = GetMapList(pNewArray, name, change_serial)) == false)
 	{
@@ -280,138 +290,345 @@ Handle:UpdateMapList(Handle:pUseArray, const String:name[], &pSerial, flags)
 	/* If there was a success, and the serial has not changed, bail out */
 	if (success && pSerial == change_serial)
 	{
-		return INVALID_HANDLE;
+		return null;
 	}
 	
 	/**
 	 * If there was a success but no map list, we need to look in the maps folder
 	 * If there was a failure and the flag is specified, we need to look in the maps folder
 	 */
-	if ((success && pNewArray == INVALID_HANDLE)
-		|| (!success && (flags & MAPLIST_FLAG_MAPSFOLDER)))
+	if ((success && pNewArray == null)
+		|| (!success && ((flags & MAPLIST_FLAG_MAPSFOLDER) == MAPLIST_FLAG_MAPSFOLDER)))
 	{
-		pNewArray = CreateArray(ByteCountToCells(PLATFORM_MAX_PATH));
+		pNewArray = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
 		free_new_array = true;
 		
-		new blk;
+		FindMapsInDirectory("maps", pNewArray);
 		
-		// TODO Find all files
+		/* Remove the array if there were no items */
+		if (pNewArray.Length == 0)
+		{
+			delete pNewArray;
+			pNewArray = null;
+		}
+		else
+		{
+			SortADTArray(pNewArray, Sort_Ascending, Sort_String);
+		}
+		
+		change_serial = -1;
 	}
+	
+	/* If there is still no array by this point, bail out. */
+	if (pNewArray == null)
+	{
+		pSerial = -1;
+		return null;
+	}
+	
+	pSerial = change_serial;
+	
+	/* If there is no input array, return something temporary. */
+	if (pUseArray == null)
+	{
+		if (free_new_array)
+		{
+			return pNewArray;
+		}
+		else
+		{
+			return pNewArray.Clone();
+		}
+	}
+	
+	/* Clear the input array if necessary. */
+	if ((flags & MAPLIST_FLAG_CLEARARRAY) == MAPLIST_FLAG_CLEARARRAY)
+	{
+		pUseArray.Clear();
+	}
+	
+	/* Copy. */
+	for (int i = 0; i < pNewArray.Length; i++)
+	{
+		char buffer[PLATFORM_MAX_PATH];
+		pNewArray.GetString(i, buffer, sizeof(buffer));
+		pUseArray.PushString(buffer);
+	}
+	
+	/* Free resources if necessary. */
+	if (free_new_array)
+	{
+		delete pNewArray;
+	}
+	
+	/* Return the array we were given. */
+	return pUseArray;
 }
 
-bool:GetMapList(Handle:ppKv, const String:name[], &pSerial)
+
+void FindMapsInDirectory(const char[] directory, ArrayList files)
 {
-	new last_time;
-	new pMapList[maplist_info_t];
+	if (!DirExists(directory, true, "GAME"))
+	{
+		return;
+	}
 	
-	if (!GetTrieArray(m_ListLookup, name, pMapList, sizeof(pMapList)))
+	DirectoryListing findHandle = OpenDirectory(directory, true, "GAME");
+	
+	// Even if a directory exists, a null DirectoryListing handle can be returned due to permissions, etc...
+	if (findHandle == null)
+	{
+		return;
+	}
+	
+	char fileName[PLATFORM_MAX_PATH];
+	FileType fileType;
+	
+	while (findHandle.GetNext(fileName, sizeof(fileName), fileType))
+	{
+		char filePath[PLATFORM_MAX_PATH];
+		Format(filePath, sizeof(filePath), "%s/%s", directory, fileName);
+		
+		switch (fileType)
+		{
+			case FileType_File:
+			{
+				int trimEnd = strlen(filePath) - 4;
+				if (!StrEqual(filePath[trimEnd], ".bsp"))
+					continue;
+				
+				char buffer[PLATFORM_MAX_PATH];
+				
+				// Trim the .bsp from the end and maps/ from the start
+				strcopy(buffer, trimEnd, filePath[5]);
+				
+				if (!IsMapValid(buffer))
+					continue;
+					
+				files.PushString(buffer);
+			}
+			
+			case FileType_Directory:
+			{
+				// 1.7's documentation says . and .. can be returned even though they don't appear to be in 1.7.
+				if (StrEqual(directory, ".") || StrEqual(directory, ".."))
+					continue;
+				// Recursively call for subdirectories
+				FindMapsInDirectory(filePath, files);
+			}
+		}
+	}
+	
+	delete findHandle;
+}
+
+bool GetMapList(ArrayList ppArray, const char[] name, int &pSerial)
+{
+	int last_time;
+	int pMapList[maplist_info_t];
+	
+	if (!m_ListLookup.GetArray(name, pMapList, sizeof(pMapList)))
 		return false;
 	
-	if (!pMapList[bIsPath])
-		return GetMapList(ppKv, pMapList[sPath], pSerial);
+	if (!pMapList[maplist_bIsPath])
+		return GetMapList(ppArray, pMapList[maplist_path], pSerial);
 		
 	/* If it is a path, and the path is "*", assume all files must be used. */
-	if (strcmp(pMapList[sPath], "*") == 0)
+	if (strcmp(pMapList[maplist_path], "*") == 0)
 	{
-		ppKv = INVALID_HANDLE;
+		ppArray = null;
 		return true;
 	}
 	
-	if ((last_time = GetFileTime(pMapList[sPath], FileTime_LastChange)) > -1
-		|| last_time > pMapList[last_modified_time])
+	if (m_pMapCycleFile != null && strcmp(name, "mapcyclefile") == 0)
 	{
-		/* Reparse */
-		// TODO: logic to read file here
+		char path[PLATFORM_MAX_PATH];
+		GetMapCycleFilePath(path, sizeof(path));
+		
+		if (strcmp(path, pMapList[maplist_path]) != 0)
+		{
+			strcopy(pMapList[maplist_path], sizeof(pMapList[maplist_path]), path);
+			pMapList[maplist_last_modified_time] = 0;
+		}
 	}
 	
-	if (pMapList[pArray] == INVALID_HANDLE)
+	if ((last_time = GetFileTime(pMapList[maplist_path], FileTime_LastChange)) > -1
+		|| last_time > pMapList[maplist_last_modified_time])
+	{
+		switch (pMapList[maplist_Type])
+		{
+			case MapList_Classic:
+			{
+				if (!ReadClassicMapFile(pMapList))
+				{
+					return false;
+				}
+			}
+			
+			case MapList_Advanced:
+			{
+				if (!ReadAdvancedMapFile(pMapList))
+				{
+					return false;
+				}
+			}
+		}
+		
+		pMapList[maplist_last_modified_time] = last_time;
+		pMapList[maplist_serial] = ++m_nSerialChange;
+	}
+	
+	if (pMapList[maplist_pArray] == null || pMapList[maplist_pArray].Length == 0)
 	{
 		return false;
 	}
-	pSerial = pMapList[serial];
-	ppKv = pMapList[pArray];
+	
+	pSerial = pMapList[maplist_serial];
+	ppArray = pMapList[maplist_pArray];
 	
 	return true;
+}
+
+/**
+ * Read a classic mapcycle style list.
+ * 
+ * NOTE: Filters do not operate on this kind of list
+ */
+bool ReadClassicMapFile(int[] pMapList)
+{
+	File fp;
+	char buffer[PLATFORM_MAX_PATH];
+	
+	if ((fp = OpenFile(pMapList[maplist_path], "rt", true, "GAME")) == null)
+	{
+		return false;
+	}
+	
+	delete pMapList[maplist_pArray];
+	pMapList[maplist_pArray] = new ArrayList(mapdata_t);
+	
+	while (!fp.EndOfFile() && fp.ReadLine(buffer, sizeof(buffer)))
+	{
+		TrimString(buffer);
+		if (buffer[0] == '\0'
+			|| buffer[0] == ';'
+			|| strncmp(buffer, "//", 2) == 0)
+		{
+			continue;
+		}
+		
+		if (GetEngineVersion() == Engine_Insurgency)
+		{
+			// Insurgency (presumably) doesn't allow spaces in map names
+			// and does use a space to delimit the map name from the map mode
+			
+			// Note: SM's version of this code is daft and strips the game mode out
+			// We make a copy first, then manipulate the copy to get just the map name
+			char mapName[PLATFORM_MAX_PATH];
+			strcopy(mapName, sizeof(mapName), buffer);
+			
+			int i = FindCharInString(mapName, ' ');
+			
+			if (i > -1)
+			{
+				mapName[i] = '\0';
+			}
+			
+			if (!IsMapValid(mapName))
+			{
+				continue;
+			}	
+		}
+		else	 if (!IsMapValid(buffer))
+		{
+			continue;
+		}
+		
+		int pMapData[mapdata_t];
+		strcopy(pMapData[MapData_Map], sizeof(pMapData[MapData_Map]), buffer);
+		strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), "classic");
+		pMapData[MapData_MapAttributes] = null;
+		
+		pMapList[maplist_pArray].PushArray(pMapData);
+	}
+	
+	fp.Close();
+	return true;
+}
+
+bool ReadAdvancedMapFile(int[] pMapList)
+{
+	//TODO Write advanced config parser (in separate file?)
 }
 
 /**
  * Dump the cache and re-add the maplists to it
  * @param compat_list	Handle (passed by ref, do NOT close)
  */
-DumpCache(Handle:compat_list)
+void DumpCache(ArrayList compat_list)
 {
-	ClearTrie(m_ListLookup);
+	m_ListLookup.Clear();
 	
-	for (new i = GetArraySize(m_MapLists) - 1; i >= 0; i--)
+	for (int i = m_MapLists.Length - 1; i >= 0; i--)
 	{
-		new localArray[maplist_info_t];
-		GetArrayArray(m_MapLists, i, localArray, sizeof(localArray));
-		if (compat_list != INVALID_HANDLE && localArray[bIsCompat])
+		int localArray[maplist_info_t];
+		m_MapLists.GetArray(i, localArray, sizeof(localArray));
+		if (compat_list != null && localArray[maplist_bIsCompat])
 		{
-			PushArrayArray(compat_list, localArray, sizeof(localArray));
+			compat_list.PushArray(localArray, sizeof(localArray));
 		}
 		else
 		{
-			if (localArray[pArray] != INVALID_HANDLE)
+			if (localArray[maplist_pArray] != null)
 			{
-				CloseHandle(localArray[pArray]);
+				delete localArray[maplist_pArray];
 			}
 		}
-		RemoveFromArray(m_MapLists, i);
+		m_MapLists.Erase(i);
 	}
 }
 
 // Since we don't new/delete enum arrays, just reset it.
-// Remember to set bInitialized when you'd normally new it
-ResetMapList(mapList[])
+// Remember to set maplist_bInitialized when you'd normally new it
+void ResetMapList(mapList[])
 {
-	mapList[bInitialized] = false;
-	mapList[bIsCompat] = false;
-	mapList[bIsPath] = false;
-	mapList[last_modified_time] = 0;
+	mapList[maplist_bInitialized] = false;
+	mapList[maplist_bIsCompat] = false;
+	mapList[maplist_bIsPath] = false;
+	mapList[maplist_last_modified_time] = 0;
 	// Since we store this for later, don't close it
 	/*
-	if (mapList[pArray] != INVALID_HANDLE)
+	if (mapList[maplist_pArray] != null)
 	{
-		CloseHandle(mapList[pArray]);
+		delete mapList[maplist_pArray];
 	}
 	*/
-	mapList[pArray] = INVALID_HANDLE;
-	mapList[serial] = -1;
-	mapList[sName] = "";
-	mapList[sPath] = "";
-}
-
-// Set up the functions for use in the parser.
-Handle:GetSMCParser()
-{
-	new Handle:parser = SMC_CreateParser();
-	SMC_SetReaders(parser, ParseMapList_NewSection, ParseMapList_KeyValue, ParseMapList_LeavingSection);
-	SMC_SetParseStart(parser, ParseMapList_ParseStart);
-	SMC_SetParseEnd(parser, ParseMapList_ParseEnd);
-	
-	return parser;
+	mapList[maplist_pArray] = null;
+	mapList[maplist_serial] = -1;
+	mapList[maplist_name] = "";
+	mapList[maplist_path] = "";
+	mapList[maplist_Type] = MapList_Classic;
 }
 
 // Parser functions
 
-public ParseMapList_ParseStart(Handle:smc)
+public void ParseMapList_ParseStart(SMCParser smc)
 {
 	m_CurState = MPS_NONE;
 	m_IgnoreLevel = 0;
 	ResetMapList(m_pCurMapList);
-	if (m_ListLookup == INVALID_HANDLE)
+	if (m_ListLookup == null)
 	{
 		m_ListLookup = CreateTrie();
 	}
 	
-	if (m_MapLists == INVALID_HANDLE)
+	if (m_MapLists == null)
 	{
-		m_MapLists = CreateArray(maplist_info_t);
+		m_MapLists = new ArrayList(maplist_info_t);
 	}
 }
   
-public SMCResult:ParseMapList_NewSection(Handle:smc, const String:name[], bool:opt_quotes)
+public SMCResult ParseMapList_NewSection(SMCParser smc, const char[] name, bool opt_quotes)
 {
 	if (m_IgnoreLevel)
 	{
@@ -433,9 +650,9 @@ public SMCResult:ParseMapList_NewSection(Handle:smc, const String:name[], bool:o
 	else if (m_CurState == MPS_GLOBAL)
 	{
 		ResetMapList(m_pCurMapList);
-		m_pCurMapList[bInitialized] = true;
+		m_pCurMapList[maplist_bInitialized] = true;
 		
-		strcopy(m_pCurMapList[sName], sizeof(m_pCurMapList[sName]), name);
+		strcopy(m_pCurMapList[maplist_name], sizeof(m_pCurMapList[maplist_name]), name);
 		
 		m_CurState = MPS_MAPLIST;
 	}
@@ -447,28 +664,39 @@ public SMCResult:ParseMapList_NewSection(Handle:smc, const String:name[], bool:o
 	return SMCParse_Continue;
 }
 
-public SMCResult:ParseMapList_KeyValue(Handle:smc, const String:key[], const String:value[], bool:key_quotes, bool:value_quotes)
+public SMCResult ParseMapList_KeyValue(SMCParser smc, const char[] key, const char[] value, bool key_quotes, bool value_quotes)
 {
-	if (m_IgnoreLevel || !m_pCurMapList[bInitialized])
+	if (m_IgnoreLevel || !m_pCurMapList[maplist_bInitialized])
 	{
 		return SMCParse_Continue;
 	}
 	
-	if (strcmp(key, "file") == 0)
+	if (strcmp(key, "type") == 0)
 	{
-		strcopy(m_pCurMapList[sPath], sizeof(m_pCurMapList[sPath]), value);
-		m_pCurMapList[bIsPath] = true;
+		if (strcmp(value, "advanced") == 0)
+		{
+			m_pCurMapList[maplist_Type] = MapList_Advanced;
+		}
+		else
+		{
+			m_pCurMapList[maplist_Type] = MapList_Classic;
+		}
+	}
+	else if (strcmp(key, "file") == 0)
+	{
+		strcopy(m_pCurMapList[maplist_path], sizeof(m_pCurMapList[maplist_path]), value);
+		m_pCurMapList[maplist_bIsPath] = true;
 	}
 	else if (strcmp(key, "target") == 0)
 	{
-		strcopy(m_pCurMapList[sPath], sizeof(m_pCurMapList[sPath]), value);
-		m_pCurMapList[bIsPath] = false;
+		strcopy(m_pCurMapList[maplist_path], sizeof(m_pCurMapList[maplist_path]), value);
+		m_pCurMapList[maplist_bIsPath] = false;
 	}
 	
 	return SMCParse_Continue;
 }
 
-public SMCResult:ParseMapList_LeavingSection(Handle:smc)
+public SMCResult ParseMapList_LeavingSection(SMCParser smc)
 {
 	if (m_IgnoreLevel)
 	{
@@ -478,12 +706,12 @@ public SMCResult:ParseMapList_LeavingSection(Handle:smc)
 	
 	if (m_CurState == MPS_MAPLIST)
 	{
-		if (m_pCurMapList[bInitialized]
-			&& m_pCurMapList[sPath][0] != '\0'
-			&& !IsKeyInStringMap(m_ListLookup, m_pCurMapList[sName]))
+		if (m_pCurMapList[maplist_bInitialized]
+			&& m_pCurMapList[maplist_path][0] != '\0'
+			&& !IsKeyInStringMap(m_ListLookup, m_pCurMapList[maplist_name]))
 		{
-			SetTrieArray(m_ListLookup, m_pCurMapList[sName], m_pCurMapList, sizeof(m_pCurMapList));
-			PushArrayArray(m_MapLists, m_pCurMapList);
+			m_ListLookup.SetArray(m_pCurMapList[maplist_name], m_pCurMapList, sizeof(m_pCurMapList));
+			m_MapLists.PushArray(m_pCurMapList);
 			ResetMapList(m_pCurMapList);
 		}
 		else
@@ -499,8 +727,8 @@ public SMCResult:ParseMapList_LeavingSection(Handle:smc)
 	
 	return SMCParse_Continue;
 }
- 
-public ParseMapList_ParseEnd(Handle:smc, bool:halted, bool:failed)
+
+public void ParseMapList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
 	ResetMapList(m_pCurMapList);
 }
@@ -529,7 +757,7 @@ stock bool IsKeyInStringMap(StringMap map, const char[] key, bool caseSensitive=
 	return (FindKeyInStringMap(map, key, caseSensitive) > -1);
 }
 
-SMCParser InitializeConfigParser()
+SMCParser GetMapListsCfgSMCParser()
 {
 	SMCParser parser = new SMCParser();
 	parser.OnStart = ParseMapList_ParseStart;
@@ -540,3 +768,4 @@ SMCParser InitializeConfigParser()
 	
 	return parser;
 }
+
