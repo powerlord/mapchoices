@@ -42,12 +42,18 @@
 #define MAX_GROUP_LENGTH 64
 #define MAX_MAP_ATTRIBUTES 16
 
+enum MapChoices_MapListType:
+{
+	MapChoicesMapList_Classic,
+	MapChoicesMapList_Advanced,
+}
+
 enum MapChoices_NominateResult:
 {
-	NominateResult_Added,		/** The map was added */
-	NominateResult_Rejected,	/** The map was rejected by a map filter */
-	NominateResult_InvalidMap,	/** The map doesn't exist. */
-	NominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
+	MapChoicesNominateResult_Added,		/** The map was added */
+	MapChoicesNominateResult_Rejected,	/** The map was rejected by a map filter */
+	MapChoicesNominateResult_InvalidMap,	/** The map doesn't exist. */
+	MapChoicesNominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
 };
 
 enum MapChoices_MapChange:
@@ -68,22 +74,82 @@ enum mapdata_t
 };
 
 /**
- * Loads a MapChoices list to a KeyValues file
- * 
  * This is the MapChoices equivalent to SourceMod's ReadMapList.
  * 
- * A map list is a KeyValues file of maps and keys describing the maps to MapChoices and its subplugins.
- * MapChoices allows easy configuration of maplists through addons/sourcemod/configs/mapchoices.cfg.  Each entry is
- * given a name and a file (for example, "mapchoices" => "mapchoices.txt"), or a name and a redirection
- * (for example, "mapchoices" => "default".  This native will read a map list entry,
- * cache the file, and return they KeyValues of maps it holds.
+ * Loads a map list to an ADT Array.
+ * The ADT Array containts arrays of mapdata_t enum structures.
+ *
+ * A map list is a list of maps from a file.  SourceMod allows easy configuration of 
+ * maplists through addons/sourcemod/configs/mapchoices.cfg.  Each entry is given a 
+ * name and a file (for example, "rtv" => "rtv.cfg"), or a name and a redirection 
+ * (for example, "rtv" => "default").  This native will read a map list entry, 
+ * cache the file, and return the list of maps it holds.
  * 
+ * Each entry may also have a "type" => "classic" or "type" => "advanced" mapping.
+ * This determines which type of map files are being used.
+ * If not specified, "classic" is assumed.
  * 
+ * "classic" maplists are just a list of maps in the same format as mapcycle.txt
+ * "advanced" maplists are configuration files that may use groups and have subplugin
+ *  configuration items.
+ *
+ * Serial change numbers are used to identify if a map list has changed.  Thus, if 
+ * you pass a serial change number and it's equal to what MapChoices currently knows 
+ * about the map list, then SourceMod won't reparse the file.
+ *
+ * If the maps end up being read from the maps folder (MAPLIST_FLAG_MAPSFOLDER), they 
+ * are automatically sorted in alphabetical, ascending order.
+ *
+ * Arrays created by this function are temporary and must be freed via CloseHandle().
+ * Modifying arrays created by this function will not affect future return values or 
+ * or the contents of arrays returned to other plugins.
+ *
+ * @param array			Array to store the map list.  If INVALID_HANDLE, a new blank 
+ *						array will be created.  The blocksize should be mapdata_t; 
+ *						otherwise results may be truncated.  Items are added to the array
+ *						as mapdata_t arrays.  The array is never checked for duplicates, 
+ *						and it is not read beforehand.  Only the serial number is used to
+ *						detect changes.
+ * @param serial		Serial number to identify last known map list change.  If -1, the 
+ *						the value will not be checked.  If the map list has since changed, 
+ *						the serial is updated (even if -1 was passed).  If there is an error 
+ *						finding a valid maplist, then the serial is set to -1.
+ * @param str			Config name, or "default" for the default map list.  Config names 
+ *						should be somewhat descriptive.  For example, the admin menu uses 
+ *						a config name of "admin menu".  The list names can be configured 
+ *						by users in addons/sourcemod/configs/maplists.cfg.
+ * @param flags			MAPLIST_FLAG flags.
+ * @return				On failure:
+ *						 INVALID_HANDLE is returned, the serial is set to -1, and the input 
+ *						 array (if any) is left unchanged.
+ *						On no change:
+ *						 INVALID_HANDLE is returned, the serial is unchanged, and the input 
+ *						 array (if any) is left unchanged.
+ *						On success:
+ *						 A valid array Handle is returned, containing at least one map string.  
+ *						 If an array was passed, the return value is equal to the passed Array 
+ *						 Handle.  If the passed array was not cleared, it will have grown by at 
+ *						 least one item.  The serial number is updated to a positive number.
+ * @error				Invalid array Handle that is not INVALID_HANDLE.
  */
-native ArrayList MapChoices_ReadMapList(ArrayList mapList=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
+native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
-/*
- * Clean up a map list Handle
+/**
+ * Makes a compatibility binding for map lists.  For example, if a function previously used 
+ * "clam.cfg" for map lists, this function will insert a "fake" binding to "clam.cfg" that 
+ * will be overridden if it's in the maplists.cfg file. 
+ * 
+ * This is the MapChoices equivalent of SourceMod's SetMapListCompatBind.
+ * 
+ * @param name			Configuration name that would be used with MapChoices_ReadMapList().
+ * @param file			Default file to use.
+ * @param mapListType		Which map list type this is.
+ * @noreturn
+ */
+native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType:mapListType=MapChoicesMapList_Classic);
+
+/**
+ * Clean up a map list ArrayList
  * 
  * A map list Handle is an adt_array of mapdata_t entries.
  * mapdata_t contains a Trie of MapAttributes, which is CloneHandled to the calling plugin

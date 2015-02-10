@@ -78,6 +78,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 {
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
+	CreateNative("MapChoices_ReadMapList", LoadMapList);
 	RegPluginLibrary("mapchoices");
 }
   
@@ -216,38 +217,3 @@ public int Native_StartVote(Handle plugin, int numParams)
 	StartVote(when, mapList);
 }
 
-// native Handle:MapChoices_ReadMapList(Handle:mapList=INVALID_HANDLE, &serial=1, const String:str[]="default", flags=MAPLIST_FLAG_CLEARARRAY);
-public int Native_ReadMapList(Handle plugin, int numParams)
-{
-	ArrayList mapList = view_as<ArrayList>(GetNativeCell(1));
-	int serial = GetNativeCellRef(2);
-	int flags = GetNativeCell(4);
-	
-	int length;
-	GetNativeStringLength(3, length);
-	char[] str = new char[length+1];
-	GetNativeString(3, str, length+1);
-	
-	ArrayList pArray;
-	ArrayList pNewArray;
-	
-	UpdateCache();
-	
-	if ((pNewArray = UpdateMapList(mapList, str, serial, flags)) == null)
-	{
-		return view_as<int>(INVALID_HANDLE);
-	}
-
-	SetNativeCellRef(2, serial); // Update serial with the copy from UpdateMapList
-	
-	/* If the user wanted a new array, create it now. */
-	if (mapList == INVALID_HANDLE)
-	{
-		mapList = view_as<ArrayList>(CloneHandle(pNewArray, plugin)); // Changes ownership
-		delete pNewArray; // Delete our copy of this handle
-	}
-	
-	return view_as<int>(mapList);
-	
-	// TODO Remaining map logic
-}
