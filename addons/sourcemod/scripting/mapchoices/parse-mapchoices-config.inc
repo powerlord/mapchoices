@@ -30,6 +30,10 @@
  *
  * Version: $Id$
  */
+#if defined _mapchoices_config_parser_included_
+  #endinput
+#endif
+#define _mapchoices_config_parser_included_
 
 /**
  * This file is HEAVILY influenced by SourceMod's smn_maplists.cpp.

@@ -73,6 +73,14 @@ enum mapdata_t
 	StringMap:MapData_MapAttributes,
 };
 
+// Classic-style enum to store group data
+// Note that the StringMap may be null if there were no attributes
+enum groupdata_t
+{
+	String:GroupData_Group[MAX_GROUP_LENGTH+1],
+	StringMap:GroupData_GroupAttributes,
+}
+
 /**
  * This is the MapChoices equivalent to SourceMod's ReadMapList.
  * 
@@ -266,27 +274,31 @@ native void MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
  * 
  * @param mapGroup	The group the map is in
  * @param map			The map name from a map list
- * @param data		A Trie of keys and values for the selected map
+ * @param mapData		A Trie of keys and values for the selected map
+ * @param groupData	A Trie of keys and values for the selected group
  * 
  * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
  *
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  */
-typedef MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap data);
+typedef MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
 
 /**
  * Get a Trie of keys and values for a map.
  * This is the same trie that would be passed to a map filter.
  * 
- * @param map			The map whose data you want
+ * NOTE: This function may yet be removed in favor of MapFilters only
+ * 
  * @param mapGroup	The mapGroup for the map whose data you want
- * @param data		A Trie Handle.
+ * @param map			The map whose data you want
+ * @param mapData		A Trie Handle to store map keys and values
+ * @param groupData	A Trie Handle to store map group keys and values
  * 
  * @return			true if we have data for a map, false otherwise
  * @error			if data is INVALID_HANDLE
  */
-native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, StringMap data);
+native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, StringMap mapdata, StringMap groupData=null);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
