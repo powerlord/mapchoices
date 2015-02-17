@@ -71,6 +71,7 @@ enum mapdata_t
 	String:MapData_Map[PLATFORM_MAX_PATH+1],
 	String:MapData_MapGroup[MAX_GROUP_LENGTH+1],
 	StringMap:MapData_MapAttributes,
+	StringMap:MapData_GroupAttributes,
 };
 
 // Classic-style enum to store group data

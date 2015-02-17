@@ -40,7 +40,7 @@
  * This file is the parser for Advanced map configuration files
  */
  
-#include "../include/mapchoices" // Include our own file to gain access to enums and the like
+//#include "../include/mapchoices" // Include our own file to gain access to enums and the like
 
 #define CONFIGFILE "configs/mapchoices.cfg"
 
@@ -59,8 +59,40 @@ static int m_AdvIgnoreLevel;
 static ArrayList tempMapList;
 static ArrayList tempGroupList;
 
-// Parser functions
+bool ReadAdvancedMapFile(int[] pMapList)
+{
+	if (!FileExists(pMapList[maplist_path], true))
+	{
+		return false;
+	}
+	
+	delete pMapList[maplist_pArray];
+	delete pMapList[maplist_pGroupArray];
+	
+	SMCParser parser = GetAdvancedCfgSMCParser();
+	
+	int line;
+	int col;
+	
+	SMCError error;
+	
+	if ((error = parser.ParseFile(pMapList[maplist_path], line, col))
+		!= SMCError_Okay)
+	{
+		char errmsg[256];
+		SMC_GetErrorString(error, errmsg, sizeof(errmsg));
+		
+		LogError("[MC] Could not parse file \"%s\"", pMapList[maplist_path]);
+		LogError("[MC] Error on line %d (col %d): %s", line, col, errmsg);		
+		return false;
+	}
+	
+	pMapList[maplist_pArray] = tempMapList;
+	pMapList[maplist_pGroupArray] = tempGroupList;
+	return true;
+}
 
+// Parser functions
 public void ParseAdvancedList_ParseStart(SMCParser smc)
 {
 	m_CurAdvState = ADV_MPS_NONE;
@@ -154,7 +186,7 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 	{
 		// Copy array
 		int realMapData[mapdata_t];
-		CopyMapDataArray(m_MapData, realMapData);
+		CopyMapData(m_MapData, realMapData);
 		
 		ResetMapData(m_MapData);
 		
@@ -165,7 +197,7 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
 		int realGroupData[groupdata_t];
-		CopyGroupDataArray(m_GroupData, realGroupData);
+		CopyGroupData(m_GroupData, realGroupData);
 		
 		ResetGroupData(m_GroupData);
 		
@@ -202,14 +234,14 @@ stock void ResetGroupData(int groupData[groupdata_t])
 	groupData[GroupData_GroupAttributes] = null;
 }
 
-stock void CopyMapDataArray(int source[mapdata_t], int target[mapdata_t])
+stock void CopyMapData(int source[mapdata_t], int target[mapdata_t])
 {
 	strcopy(target[MapData_Map], sizeof(target[MapData_Map]), source[MapData_Map]);
 	strcopy(target[MapData_MapGroup], sizeof(target[MapData_MapGroup]), source[MapData_MapGroup]);
 	target[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(source[MapData_MapAttributes]));
 }
 
-stock void CopyGroupDataArray(int source[groupdata_t], int target[groupdata_t])
+stock void CopyGroupData(int source[groupdata_t], int target[groupdata_t])
 {
 	strcopy(target[GroupData_Group], sizeof(target[GroupData_Group]), source[GroupData_Group]);
 	target[GroupData_GroupAttributes] = view_as<StringMap>(CloneHandle(source[GroupData_GroupAttributes]));
@@ -218,11 +250,11 @@ stock void CopyGroupDataArray(int source[groupdata_t], int target[groupdata_t])
 SMCParser GetAdvancedCfgSMCParser()
 {
 	SMCParser parser = new SMCParser();
-	parser.OnStart = ParseMapList_ParseStart;
-	parser.OnEnd = ParseMapList_ParseEnd;
-	parser.OnEnterSection = ParseMapList_NewSection;
-	parser.OnLeaveSection = ParseMapList_LeavingSection;
-	parser.OnKeyValue = ParseMapList_KeyValue;
+	parser.OnStart = ParseAdvancedList_ParseStart;
+	parser.OnEnd = ParseAdvancedList_ParseEnd;
+	parser.OnEnterSection = ParseAdvancedList_NewSection;
+	parser.OnLeaveSection = ParseAdvancedList_LeavingSection;
+	parser.OnKeyValue = ParseAdvancedList_KeyValue;
 	
 	return parser;
 }

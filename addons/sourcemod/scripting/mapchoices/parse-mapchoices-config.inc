@@ -47,7 +47,6 @@
  
 // This file is for parsing SMC constructs, such as configs/mapchoices.cfg
 //#include "../include/mapchoices" // Include our own file to gain access to enums and the like
-
 #define CONFIGFILE "configs/mapchoices.cfg"
 
 //#pragma newdecls required
@@ -67,10 +66,13 @@ enum maplist_info_t
 	bool:maplist_bIsPath,
 	maplist_last_modified_time,
 	ArrayList:maplist_pArray,				/**< ArrayList of mapdata_t */
+	ArrayList:maplist_pGroupArray,			/**< ArrayList of groupdata_t */
 	maplist_serial,
 	String:maplist_name[PLATFORM_MAX_PATH],
 	String:maplist_path[PLATFORM_MAX_PATH],
 }
+
+#include "mapchoices/parse-advanced-config"
 
 static char m_ConfigFile[PLATFORM_MAX_PATH]; 
 static int m_ConfigLastChanged;
@@ -109,11 +111,11 @@ void GetMapCycleFilePath(char[] pBuffer, int maxlen)
 			// Note: Source SDK 2013 is left out in the SM core in 1.6, check 1.7 to see what it does.
 			Format(pBuffer, maxlen, "cfg/%s", pMapCycleFileName);
 			
-			if (!FileExists(pBuffer))
+			if (!FileExists(pBuffer, true))
 			{
 				Format(pBuffer, maxlen, "%s", pMapCycleFileName);
 
-				if (!FileExists(pBuffer))
+				if (!FileExists(pBuffer, true))
 				{
 					Format(pBuffer, maxlen, "cfg/mapcycle_default.txt");
 				}
@@ -736,11 +738,6 @@ static bool ReadClassicMapFile(int[] pMapList)
 	
 	fp.Close();
 	return true;
-}
-
-static bool ReadAdvancedMapFile(int[] pMapList)
-{
-	//TODO Write advanced config parser (in separate file?)
 }
 
 /**
