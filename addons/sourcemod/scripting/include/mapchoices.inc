@@ -157,6 +157,10 @@ native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const c
  */
 native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType:mapListType=MapChoicesMapList_Classic);
 
+native bool MapChoices_EndOfMapVoteEnabled();
+
+native int MapChoices_GetStartRounds();
+
 /**
  * Clean up a map list ArrayList
  * 
@@ -283,7 +287,8 @@ native void MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  */
-typedef MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
+typedef MapChoices_MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
+
 
 /**
  * Get a Trie of keys and values for a map.
@@ -309,7 +314,7 @@ native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, Strin
  * 
  * @return 		true if the filter was added
  */
-native bool MapChoices_RegisterMapFilter(MapFilter filter);
+native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
 
 /**
  * Unregister a map filter.
@@ -318,7 +323,16 @@ native bool MapChoices_RegisterMapFilter(MapFilter filter);
  * 
  * @return 		true if the filter was removed, false if it wasn't registered
  */
-native bool MapChoices_UnregisterMapFilter(MapFilter filter);
+native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
+
+/**
+ * If a plugin has defined a ChangeMap function, it will be called instead of ForceChangeMap.
+ * 
+ * @param map			The map being changed to
+ * @param isRoundEnd	true if this is at the end of the round, false otherwise.
+ * @return Plugin_Handled or higher to handle map change or Plugin_Continue to let MapChoices handle it
+ */
+typedef MapChoices_ChangeMap = function Action (const char[] map, bool isRoundEnd);
 
 /**
  * Register a game plugin
@@ -329,7 +343,7 @@ native bool MapChoices_UnregisterMapFilter(MapFilter filter);
  * 
  * @return		true if plugin was registered.
  */
-native bool RegisterGamePlugin(bool overrideRoundEnd);
+native bool MapChoices_RegisterGamePlugin(bool overrideRoundEnd, MapChoices_ChangeMap changeMapHandler=INVALID_FUNCTION);
 
 /**
  * Unregister a game plugin
@@ -338,7 +352,7 @@ native bool RegisterGamePlugin(bool overrideRoundEnd);
  * 
  * @return		true if plugin was registered.
  */
-native bool UnregisterGamePlugin();
+native bool MapChoices_UnregisterGamePlugin();
 
 /**
  * Remove the path from the map name

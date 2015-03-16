@@ -184,6 +184,11 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
 	++roundCount;
 	
+	if (g_bChangeAtRoundEnd)
+	{
+		
+	}
+	
 	// Missing logic to actually check the rounds and start the vote.
 }
 
