@@ -31,6 +31,7 @@
  * Version: $Id$
  */
 #include <sourcemod>
+
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
 #pragma semicolon 1
 #pragma newdecls required
@@ -58,10 +59,12 @@ Handle g_Forward_HandlerVoteStart;
 Handle g_Forward_HandlerCancelVote;
 Handle g_Forward_MapFilter;
 
-
-
+bool g_bChangeAtRoundEnd = false;
 
 //new Handle:m_ListLookup;
+
+const int TEAM1 = 2;
+const int TEAM2 = 3;
 
 #include "mapchoices/parse-mapchoices-config.inc"
 
@@ -107,6 +110,11 @@ public void OnPluginStart()
 	
 	HookEvent("round_end", Event_RoundEnd);
 	
+}
+
+public void OnMapStart()
+{
+	g_bChangeAtRoundEnd = false;
 }
 
 public void OnConfigsExecuted()

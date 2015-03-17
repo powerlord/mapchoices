@@ -63,6 +63,27 @@ enum MapChoices_MapChange:
 	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
 };
 
+enum MapChoices_GameFlags
+{
+	MapChoicesGame_BonusTime = (1<<0),			/** Game supports bonus time, mutually exclusive with MapChoicesGame_RestartTime
+													HL2:DM, DoD:S, CS:S */
+	MapChoicesGame_RestartTime = (1<<1),			/** Game supports restart time, mutually exclusive with MapChoicesGame_BonusTime
+													CS:S, CS:GO */
+	MapChoicesGame_NoGameEnd = (1<<2),			/** Game does NOT support game_end entities */
+	MapChoicesGame_SupportsFragLimit = (1<<3),	/** Game supports frag limits
+													HL2:DM, Neotokyo (?) */
+	
+	MapChoicesGame_OverrideRoundEnd = (1<<1231231231),	/** Game plugin will handle round_end event manually */
+}
+
+enum MapChoices_ConVarOverride
+{
+	MapChoicesConVar_BonusTime,
+	MapChoicesConVar_Winlimit,
+	MapChoicesConVar_FragLimit,
+	MapChoicesConVar_MaxRounds,
+}
+
 // Classic-style enum because it's an enum-struct
 // Used to store data about a map.
 // Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
@@ -334,6 +355,11 @@ native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
  */
 typedef MapChoices_ChangeMap = function Action (const char[] map, bool isRoundEnd);
 
+typedef MapChoices_WinLimit = function Action (int team, int score);
+
+typedef MapChoices_RoundLimit = function Action (int rounds);
+
+
 /**
  * Register a game plugin
  * 
@@ -343,7 +369,17 @@ typedef MapChoices_ChangeMap = function Action (const char[] map, bool isRoundEn
  * 
  * @return		true if plugin was registered.
  */
-native bool MapChoices_RegisterGamePlugin(bool overrideRoundEnd, MapChoices_ChangeMap changeMapHandler=INVALID_FUNCTION);
+native void MapChoices_GamePluginOverrideRoundEnd(bool overrideRoundEnd);
+
+native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
+native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
+
+native bool MapChoices_AddWinlimitCheck(MapChoices_ChangeMap changeMapHandler);
+native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
+
+
+native bool MapChoices_RegisterRoundChangeTime(MapChoices_GetRoundChangeTimeCvar changeTimeCvarHandler);
+native bool MapChoices_RemoveRoundChangeTime();
 
 /**
  * Unregister a game plugin
