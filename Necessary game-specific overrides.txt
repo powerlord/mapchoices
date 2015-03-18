@@ -1,0 +1,35 @@
+For game plugins, we need the following abilities:
+
+1. Flag to indicate the game uses frags.  HL2:DM only?  Possibly Neotokyo.
+2. Flag to indicate that a game does NOT support game_end entities.
+2. A way to override the round_end event.
+3. A way of overriding these cvars:
+   Bonus Round Time (CSS, CSGO)
+   Win limit (Neotokyo)
+   Frag Limit (for future use)
+   MaxRounds (for future use?)
+4. A method to swap team scores.
+5. A method to call into CheckMaxRounds.
+6. A method to override winlimit check.
+7. A method to override when map vote takes place. (CS:GO Arms Race, CS:GO Deathmatch, TF2 MvM)
+
+TF2 plugin requirements:
+Hook teamplay_win_panel, arena_win_panel instead of round_end.
+Switch team scores when TF2 internally swaps scores.
+Override winlimit check for MvM.
+Additional winlimit checks as TF2 supports a variety of additional cvars.
+
+CSS plugin requirements:
+Override Bonus Round Time CVar
+
+CSGO plugin requirements:
+Override round_end to not process for Arms Race and Deathmatch.
+In round_end override, check if clinch can cause a win next round and do a vote if it can.
+Override Bonus Round Time CVar
+
+Nuclear Dawn requirements:
+Hook round_win instead of round_end
+
+Neotokyo requirements:
+Hook game_round_start instead of round_end as round_end doesn't give us scores.
+

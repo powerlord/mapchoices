@@ -375,7 +375,7 @@ native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMap changeMapHandler
 native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
 
 native bool MapChoices_AddWinlimitCheck(MapChoices_ChangeMap changeMapHandler);
-native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
+native bool MapChoices_RemoveWinlimitCheck(MapChoices_ChangeMap changeMapHandler);
 
 
 native bool MapChoices_RegisterRoundChangeTime(MapChoices_GetRoundChangeTimeCvar changeTimeCvarHandler);
