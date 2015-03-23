@@ -15,7 +15,7 @@ For game plugins, we need the following abilities:
 
 TF2 plugin requirements:
 Hook teamplay_win_panel, arena_win_panel instead of round_end.
-Switch team scores when TF2 internally swaps scores.
+Switch team scores when TF2 internally swaps scores.  m_bSwitchedTeamsThisRound on gamerules?
 Override winlimit check for MvM.
 Additional winlimit checks as TF2 supports a variety of additional cvars.
 

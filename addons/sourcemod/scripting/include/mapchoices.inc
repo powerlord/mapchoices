@@ -42,6 +42,18 @@
 #define MAX_GROUP_LENGTH 64
 #define MAX_MAP_ATTRIBUTES 16
 
+// Team list for score swapping.
+// Note: It's not clear if any games use Team3 and Team4, although ostensibly Fortress Forever does
+enum MapChoices_Team
+{
+	MapChoices_TeamUnassigned,
+	MapChoices_TeamSpectator,
+	MapChoices_Team1,
+	MapChoices_Team2,
+	MapChoices_Team3,
+	MapChoices_Team4,
+}
+
 enum MapChoices_MapListType:
 {
 	MapChoicesMapList_Classic,
@@ -195,9 +207,9 @@ stock void CloseMapList(ArrayList &mapList)
 		return;
 	}
 	
-	for (new i = 0 ; i < mapList.Length; i++)
+	for (int i = 0 ; i < mapList.Length; i++)
 	{
-		new mapData[mapdata_t];
+		int mapData[mapdata_t];
 		mapList.GetArray(i, mapData, sizeof(mapData));
 		delete mapData[MapData_MapAttributes];
 	}
@@ -374,12 +386,33 @@ native void MapChoices_GamePluginOverrideRoundEnd(bool overrideRoundEnd);
 native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
 native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
 
-native bool MapChoices_AddWinlimitCheck(MapChoices_ChangeMap changeMapHandler);
-native bool MapChoices_RemoveWinlimitCheck(MapChoices_ChangeMap changeMapHandler);
+native bool MapChoices_AddWinlimitCheck(MapChoices_WinLimit winLimitHandler);
+native bool MapChoices_RemoveWinlimitCheck(MapChoices_WinLimit winLimitHandler);
+
+native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
+native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
 
 
-native bool MapChoices_RegisterRoundChangeTime(MapChoices_GetRoundChangeTimeCvar changeTimeCvarHandler);
-native bool MapChoices_RemoveRoundChangeTime();
+/**
+ * Called by Game plugins to swap scores.
+ * Swap the scores for team 1 and team 2.
+ * 
+ * @param team1	First team to swap.
+ * @param team2	Second team to swap.
+ */
+native void MapChoices_SwapTeamScores(MapChoices_Team team1, MapChoices_Team team2);
+
+/**
+ * Override one of the plugins cvars
+ * 
+ * Used by game plugins to alter that ConVars used
+ * 
+ * @param conVar		Which conVar are we overriding?
+ * @param name		name of the new ConVar to use
+ * 
+ * NOTE: ConVars are owned by core, not by individual plugins.  They can not be closed or cloned.
+ */
+native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar);
 
 /**
  * Unregister a game plugin
