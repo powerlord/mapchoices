@@ -33,6 +33,7 @@
 #include <sourcemod>
 
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
+#include <sdktools>
 #pragma semicolon 1
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
@@ -41,12 +42,18 @@ int roundCount;
 StringMap g_Trie_NominatedMaps;
 char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 
+int g_WinCount[MapChoices_Team];
+
 //ConVars
 ConVar g_Cvar_Enabled;
 
 // Valve ConVars
-ConVar g_Cvar_MaxRounds;
 ConVar g_Cvar_Timelimit;
+
+ConVar g_Cvar_BonusTime;
+ConVar g_Cvar_Winlimit;
+ConVar g_Cvar_FragLimit;
+ConVar g_Cvar_MaxRounds;
 
 // Global Forwards
 Handle g_Forward_MapVoteStarted;
@@ -58,6 +65,8 @@ Handle g_Forward_NominationRemoved;
 Handle g_Forward_HandlerVoteStart;
 Handle g_Forward_HandlerCancelVote;
 Handle g_Forward_MapFilter;
+
+Handle g_Forward_ChangeMap;
 
 bool g_bChangeAtRoundEnd = false;
 
@@ -82,6 +91,9 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	CreateNative("MapChoices_ReadMapList", LoadMapList);
+	
+	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
+	
 	RegPluginLibrary("mapchoices");
 }
   
@@ -96,8 +108,13 @@ public void OnPluginStart()
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	
-	g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
 	g_Cvar_Timelimit = FindConVar("mp_timelimit");
+
+	// These 4 cvars may be overridden by game plugins
+	g_Cvar_BonusTime = FindConVar("mp_bonusroundtime");
+	g_Cvar_Winlimit = FindConVar("mp_winlimit");
+	g_Cvar_FragLimit = FindConVar("mp_fraglimit");
+	g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
 	
 	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_MapVoteStarted", ET_Ignore);
 	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_MapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
@@ -108,6 +125,8 @@ public void OnPluginStart()
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
+	g_Forward_ChangeMap = CreateForward(ET_Hook, Param_String, Param_Cell);
+	
 	HookEvent("round_end", Event_RoundEnd);
 	
 }
@@ -115,6 +134,12 @@ public void OnPluginStart()
 public void OnMapStart()
 {
 	g_bChangeAtRoundEnd = false;
+	
+	// Reset win counters
+	for (int i = 0; i < sizeof(g_WinCount); i++)
+	{
+		g_WinCount[i] = 0;
+	}
 }
 
 public void OnConfigsExecuted()
@@ -200,6 +225,100 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 	// Missing logic to actually check the rounds and start the vote.
 }
 
+void ProcessRoundEnd(int winner)
+{
+	++roundCount;
+	
+	if (g_bChangeAtRoundEnd)
+	{
+		ChangeMap(true);
+	}
+	
+}
+
+void ChangeMap(bool isRoundEnd)
+{
+	Action result = Plugin_Continue;
+	
+	char map[PLATFORM_MAX_PATH];
+	
+	GetNextMap(map, sizeof(map));
+	
+	Call_StartForward(g_Forward_ChangeMap);
+	Call_PushString(map);
+	Call_PushCell(isRoundEnd);
+	Call_Finish(result);
+	
+	if (result < Plugin_Handled)
+	{
+		if (!isRoundEnd)
+		{
+			RoundEnd();
+		}
+		
+		if (g_Cvar_BonusTime != null)
+		{
+			CreateTimer(g_Cvar_BonusTime.FloatValue - 0.2, Timer_GameEnd, _, TIMER_FLAG_NO_MAPCHANGE);
+		}
+		else
+		{
+			GameEnd();
+		}
+		
+		int entity = -1;
+		
+		entity = FindEntityByClassname(-1, "game_end");
+		
+		if (entity == -1)
+		{
+			entity = CreateEntityByName("game_end");
+		}
+	}
+}
+
+public Action Timer_GameEnd(Handle timer)
+{
+	GameEnd();
+}
+
+// Note: This is the generic version.  Other games have better ways of doing this, such as CSS/CSGO's CS_TerminateRound method
+// and TF2's team_control_point_master's SetWinner or game_round_win entity
+void RoundEnd()
+{
+	Event roundEndEvent = CreateEvent("round_end");
+	if (roundEndEvent != null)
+	{
+		roundEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
+		roundEndEvent.SetInt("reason", 0); // Usually time ran out
+		roundEndEvent.SetString("message", "Map Change");
+		roundEndEvent.Fire();
+	}
+}
+
+void GameEnd()
+{
+	int entity = -1;
+	
+	entity = FindEntityByClassname(-1, "game_end");
+	
+	if (entity == -1)
+	{
+		entity = CreateEntityByName("game_end");
+		if (entity > -1)
+		{
+			if (DispatchSpawn(entity))
+			{
+				AcceptEntityInput(entity, "EndGame");
+				return;
+			}
+		}
+	}
+	
+	Event gameEndEvent = CreateEvent("game_end");
+	gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
+	gameEndEvent.Fire();
+}
+
 // Natives
 
 public int Native_ReadMapChoicesList(Handle plugin, int numParams)
@@ -210,14 +329,14 @@ public int Native_ReadMapChoicesList(Handle plugin, int numParams)
 
 public int Native_AddMapFilter(Handle plugin, int numParams)
 {
-	Function func = GetNativeCell(1);
+	Function func = GetNativeFunction(1);
 	
 	return AddToForward(g_Forward_MapFilter, plugin, func);
 }
 
 public int Native_RemoveMapFilter(Handle plugin, int numParams)
 {
-	Function func = GetNativeCell(1);
+	Function func = GetNativeFunction(1);
 	
 	return RemoveFromForward(g_Forward_MapFilter, plugin, func);
 }
@@ -230,3 +349,50 @@ public int Native_StartVote(Handle plugin, int numParams)
 	StartVote(when, mapList);
 }
 
+// MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar)
+public int Native_OverrideConVar(Handle plugin, int numParams)
+{
+	MapChoices_ConVarOverride overrideConVar = GetNativeCell(1);
+	ConVar conVar = GetNativeCell(2);
+	
+	if (conVar == null)
+	{
+		return false;
+	}
+	
+	switch (overrideConVar)
+	{
+		case MapChoicesConVar_BonusTime:
+		{
+			g_Cvar_BonusTime = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_Winlimit:
+		{
+			g_Cvar_Winlimit = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_FragLimit:
+		{
+			g_Cvar_FragLimit = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_MaxRounds:
+		{
+			g_Cvar_MaxRounds = conVar;
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+public int Native_ProcessRoundEnd(Handle plugin, int numParams)
+{
+	int winner = GetNativeCell(1);
+	
+	ProcessRoundEnd(winner);
+}

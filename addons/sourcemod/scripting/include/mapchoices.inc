@@ -195,6 +195,16 @@ native bool MapChoices_EndOfMapVoteEnabled();
 native int MapChoices_GetStartRounds();
 
 /**
+ * Process round end logic.
+ * 
+ * Call this from a game plugin if a game uses a different event.
+ * 
+ * @param winner		Which team won
+ * @param score		What that team's score is.  If -1, use internal scores
+ */
+native void MapChoices_ProcessRoundEnd(int winner, int score=-1);
+
+/**
  * Clean up a map list ArrayList
  * 
  * A map list Handle is an adt_array of mapdata_t entries.
