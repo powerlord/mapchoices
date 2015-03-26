@@ -64,6 +64,8 @@ Handle g_Forward_NominationRemoved;
 // Private Forwards
 Handle g_Forward_HandlerVoteStart;
 Handle g_Forward_HandlerCancelVote;
+Handle g_Forward_HandlerIsVoteInProgress;
+
 Handle g_Forward_MapFilter;
 
 Handle g_Forward_ChangeMap;
@@ -71,9 +73,6 @@ Handle g_Forward_ChangeMap;
 bool g_bChangeAtRoundEnd = false;
 
 //new Handle:m_ListLookup;
-
-const int TEAM1 = 2;
-const int TEAM2 = 3;
 
 #include "mapchoices/parse-mapchoices-config.inc"
 
@@ -92,7 +91,9 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	CreateNative("MapChoices_ReadMapList", LoadMapList);
 	
+	CreateNative("MapChoices_ProcessRoundEnd", Native_ProcessRoundEnd);
 	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
+	CreateNative("MapChoices_SwapTeamScores", Native_SwapTeamScores);
 	
 	RegPluginLibrary("mapchoices");
 }
@@ -123,7 +124,10 @@ public void OnPluginStart()
 	
 	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
-	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_Cell);
+	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook);
+	
+	
+	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_String, Param_Cell, Param_Cell);
 	
 	g_Forward_ChangeMap = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
@@ -156,10 +160,15 @@ public void OnClientDisconnect(int client)
 		{
 			--count;
 			
-			// Whoops, no more nominations for this map, so lets remove it.
 			if (count <= 0)
 			{
+				// Whoops, no more nominations for this map, so lets remove it.
 				g_Trie_NominatedMaps.Remove(g_MapNominations[client]);
+			}
+			else
+			{
+				// Save the new count back to the trie
+				g_Trie_NominatedMaps.SetValue(g_MapNominations[client], count);
 			}
 		}
 		
@@ -175,13 +184,21 @@ void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 	}
 }
 
-bool CheckMapFilter(const char[] map)
+bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData)
 {
 	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_MapFilter);
+	Call_PushString(mapGroup);
 	Call_PushString(map);
+	Call_PushCell(mapData);
+	Call_PushCell(groupData);
 	Call_Finish(result);
-	//TODO What we do in subplugins
+	if (result >= Plugin_Handled)
+	{
+		return false;
+	}
+	
+	return true;
 }
 
 // Ugh, caching is going to be a mess... might want to reconsider caching and just make this a general method for reading from the appropriate config file.
@@ -395,4 +412,16 @@ public int Native_ProcessRoundEnd(Handle plugin, int numParams)
 	int winner = GetNativeCell(1);
 	
 	ProcessRoundEnd(winner);
+}
+
+// native void MapChoices_SwapTeamScores(MapChoices_Team team1, MapChoices_Team team2);
+public int Native_SwapTeamScores(Handle plugin, int numParams)
+{
+	// MapChoices_Team is really just an int anyway
+	int team1 = GetNativeCell(1);
+	int team2 = GetNativeCell(2);
+	
+	int temp = g_WinCount[team1];
+	g_WinCount[team1] = g_WinCount[team2];
+	g_WinCount[team2] = temp;
 }

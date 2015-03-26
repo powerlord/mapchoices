@@ -442,7 +442,7 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 		
 		ArrayList oldArray = pNewArray;
 		pNewArray = view_as<ArrayList>(CloneHandle(oldArray, plugin));
-		CloseHandle(oldArray);
+		delete oldArray;
 		
 		change_serial = -1;
 	}
@@ -463,6 +463,7 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 	{
 		if (free_new_array)
 		{
+			// This was already converted to plugin in the above block
 			return pNewArray;
 		}
 		else
@@ -524,6 +525,7 @@ void CopyMapDataArray(ArrayList mapData, ArrayList &newData, Handle plugin)
 	{
 		ArrayList tempData = new ArrayList(mapdata_t);
 		newData = view_as<ArrayList>(CloneHandle(tempData, plugin));
+		delete tempData;
 	}
 	
 	for (int i = 0; i < mapData.Length; i++)
@@ -829,7 +831,7 @@ public int Native_SetMapListCompatBind(Handle plugin, int numParams)
 	char[] file = new char[length+1];
 	GetNativeString(2, name, length+1);
 	
-	MapChoices_MapListType mapListType = view_as<MapChoices_MapListType>(GetNativeCell(3));
+	MapChoices_MapListType mapListType = GetNativeCell(3);
 	
 	UpdateCache();
 	AddOrUpdateDefault(name, file, mapListType);

@@ -77,15 +77,11 @@ enum MapChoices_MapChange:
 
 enum MapChoices_GameFlags
 {
-	MapChoicesGame_BonusTime = (1<<0),			/** Game supports bonus time, mutually exclusive with MapChoicesGame_RestartTime
-													HL2:DM, DoD:S, CS:S */
-	MapChoicesGame_RestartTime = (1<<1),			/** Game supports restart time, mutually exclusive with MapChoicesGame_BonusTime
-													CS:S, CS:GO */
-	MapChoicesGame_NoGameEnd = (1<<2),			/** Game does NOT support game_end entities */
-	MapChoicesGame_SupportsFragLimit = (1<<3),	/** Game supports frag limits
-													HL2:DM, Neotokyo (?) */
-	
-	MapChoicesGame_OverrideRoundEnd = (1<<1231231231),	/** Game plugin will handle round_end event manually */
+	MapChoicesGame_None = 0,
+	MapChoicesGame_NoGameEnd = (1<<0),			/** Game does NOT support game_end entities */
+	MapChoicesGame_SupportsFragLimit = (1<<1),	/** Game supports frag limits: HL2:DM, Neotokyo (?) */
+	MapChoicesGame_OverrideRoundEnd = (1<<2),	/** Game plugin will handle round_end event manually */
+	MapChoicesGame_AvoidHintbox = (1<<3),		/** Game text should not be displayed in hintboxes: HL2:DM */
 }
 
 enum MapChoices_ConVarOverride
@@ -410,7 +406,7 @@ native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHan
  * @param team1	First team to swap.
  * @param team2	Second team to swap.
  */
-native void MapChoices_SwapTeamScores(MapChoices_Team team1, MapChoices_Team team2);
+native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, MapChoices_Team team2=MapChoices_Team2);
 
 /**
  * Override one of the plugins cvars
