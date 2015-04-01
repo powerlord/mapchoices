@@ -44,8 +44,12 @@ char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 
 int g_WinCount[MapChoices_Team];
 
+MapChoices_GameFlags g_GameFlags = MapChoicesGame_None;
+
 //ConVars
 ConVar g_Cvar_Enabled;
+ConVar g_Cvar_RetryTime;
+ConVar g_Cvar_VoteItems;
 
 // Valve ConVars
 ConVar g_Cvar_Timelimit;
@@ -54,6 +58,8 @@ ConVar g_Cvar_BonusTime;
 ConVar g_Cvar_Winlimit;
 ConVar g_Cvar_FragLimit;
 ConVar g_Cvar_MaxRounds;
+
+// ConVar g_Cvar_ChatTime;
 
 // Global Forwards
 Handle g_Forward_MapVoteStarted;
@@ -71,6 +77,17 @@ Handle g_Forward_MapFilter;
 Handle g_Forward_ChangeMap;
 
 bool g_bChangeAtRoundEnd = false;
+bool g_bTempIgnoreRoundEnd = false;
+bool g_bOverrideRoundEnd = false;
+
+bool g_bMapVoteInProgress = false;
+bool g_bMapVoteCompleted = false;
+
+int g_OverrideVoteLimit = -1;
+
+ArrayList g_MapList = null;
+int g_Serial = -1;
+ArrayList g_RecentMapList = null;
 
 //new Handle:m_ListLookup;
 
@@ -87,10 +104,19 @@ public Plugin myinfo = {
 // Native Support
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
+	// Map list manipulation
+	CreateNative("MapChoices_ReadMapList", Native_ReadMapList);
+	CreateNative("MapChoices_SetMapListCompatBind", Native_SetMapListCompatBind);
+	
+	// Map filter natives
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
-	CreateNative("MapChoices_ReadMapList", LoadMapList);
 	
+	// Game plugin natives
+	CreateNative("MapChoices_AddGameFlags", Native_AddGameFlags);
+	CreateNative("MapChoices_RemoveGameFlags", Native_RemoveGameFlags);
+	
+	CreateNative("MapChoices_GamePluginOverrideRoundEnd", Native_OverrideRoundEnd);
 	CreateNative("MapChoices_ProcessRoundEnd", Native_ProcessRoundEnd);
 	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
 	CreateNative("MapChoices_SwapTeamScores", Native_SwapTeamScores);
@@ -108,6 +134,8 @@ public void OnPluginStart()
 	
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
+	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long to wait before we retry the vote if a vote is already running?", FCVAR_PLUGIN, true, 1.0, true, 15.0);
+	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote?", FCVAR_PLUGIN, true, 2.0, true, 8.0);
 	
 	g_Cvar_Timelimit = FindConVar("mp_timelimit");
 
@@ -116,6 +144,7 @@ public void OnPluginStart()
 	g_Cvar_Winlimit = FindConVar("mp_winlimit");
 	g_Cvar_FragLimit = FindConVar("mp_fraglimit");
 	g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
+	// g_Cvar_ChatTime = FindConVar("mp_chattime");
 	
 	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_MapVoteStarted", ET_Ignore);
 	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_MapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
@@ -131,13 +160,21 @@ public void OnPluginStart()
 	
 	g_Forward_ChangeMap = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
+	g_MapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
+	g_RecentMapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
+	
 	HookEvent("round_end", Event_RoundEnd);
 	
+	AutoExecConfig(true, "mapchoices");
 }
 
 public void OnMapStart()
 {
 	g_bChangeAtRoundEnd = false;
+	g_bTempIgnoreRoundEnd = false;
+	
+	g_bMapVoteInProgress = false;
+	g_bMapVoteCompleted = false;
 	
 	// Reset win counters
 	for (int i = 0; i < sizeof(g_WinCount); i++)
@@ -178,10 +215,58 @@ public void OnClientDisconnect(int client)
 
 void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 {
+	if (g_bMapVoteInProgress || g_bMapVoteCompleted)
+	{
+		return;
+	}
+	
+	if (Core_IsVoteInProgress())
+	{
+		DataPack data;
+		CreateDataTimer(g_Cvar_RetryTime.FloatValue, Timer_Retry, data, TIMER_FLAG_NO_MAPCHANGE);
+		data.WriteCell(when);
+		data.WriteCell(mapList);
+		data.Reset();
+	}
+
 	if (mapList == null)
 	{
-		//GetRemainingChoices("mapchoices");
+		// Figure out which maps we need to fetch
+		
+		// will involve a call to LoadMapList
+		if (LoadMapList(g_MapList, g_Serial, "mapchoices", MAPLIST_FLAG_CLEARARRAY|MAPLIST_FLAG_MAPSFOLDER) == null)
+		{
+			//TODO Decide how to recover from this error
+			SetFailState("Could not load map list");
+		}
 	}
+	
+}
+
+public Action Timer_Retry(Handle timer, DataPack data)
+{
+	MapChoices_MapChange when = data.ReadCell();
+	ArrayList mapList = data.ReadCell();
+	
+	StartVote(when, mapList);
+}
+
+bool Core_IsVoteInProgress()
+{
+	bool inProgress = false;
+	
+	Action result = Plugin_Continue;
+	
+	Call_StartForward(g_Forward_HandlerIsVoteInProgress);
+	Call_PushCellRef(result);
+	Call_Finish(result);
+	
+	if (result >= Plugin_Handled)
+	{
+		return inProgress;
+	}
+	
+	return IsVoteInProgress();
 }
 
 bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData)
@@ -201,7 +286,8 @@ bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, 
 	return true;
 }
 
-// Ugh, caching is going to be a mess... might want to reconsider caching and just make this a general method for reading from the appropriate config file.
+//Replaced with LoadMapList in parse-mapchooser-config.inc which implements the MapChoices_ReadMapList native
+/*
 stock ArrayList ReadMapChoicesList(ArrayList kv=null, int &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY)
 {
 	KeyValues kvConfig = new KeyValues("MapChoices");
@@ -215,23 +301,18 @@ stock ArrayList ReadMapChoicesList(ArrayList kv=null, int &serial=1, const char[
 	}
 	
 }
-
-stock ArrayList GetMapListFromFile(const char[] filename)
-{
-	
-}
-
-stock void LocateConfigurationFile(const char[] section, char[] filename, int maxlength)
-{
-	
-}
-
+*/
 
 // Events
 // Note: These are just the shared events
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
+	if (g_bOverrideRoundEnd || g_bTempIgnoreRoundEnd)
+	{
+		return;
+	}
+	
 	++roundCount;
 	
 	if (g_bChangeAtRoundEnd)
@@ -242,7 +323,7 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 	// Missing logic to actually check the rounds and start the vote.
 }
 
-void ProcessRoundEnd(int winner)
+void ProcessRoundEnd(int winner, int score=-1)
 {
 	++roundCount;
 	
@@ -251,6 +332,7 @@ void ProcessRoundEnd(int winner)
 		ChangeMap(true);
 	}
 	
+	//TODO finish this logic
 }
 
 void ChangeMap(bool isRoundEnd)
@@ -305,6 +387,7 @@ void RoundEnd()
 	Event roundEndEvent = CreateEvent("round_end");
 	if (roundEndEvent != null)
 	{
+		g_bTempIgnoreRoundEnd = true;
 		roundEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
 		roundEndEvent.SetInt("reason", 0); // Usually time ran out
 		roundEndEvent.SetString("message", "Map Change");
@@ -334,7 +417,17 @@ void GameEnd()
 	Event gameEndEvent = CreateEvent("game_end");
 	gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
 	gameEndEvent.Fire();
+	
+//	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, _, TIMER_FLAG_NO_MAPCHANGE);
 }
+
+//public Action Timer_End(Handle timer)
+//{
+//	char map[PLATFORM_MAX_PATH];
+//	GetNextMap(map, sizeof(map));
+//	
+//	ForceChangeLevel(map, "Map Vote");
+//}
 
 // Natives
 
@@ -342,6 +435,36 @@ public int Native_ReadMapChoicesList(Handle plugin, int numParams)
 {
 	Handle mapKv = GetNativeCell(1);
 	int serial = GetNativeCellRef(2);
+	
+	//TODO Complete this or remove native
+}
+
+public int Native_RegisterVoteHandler(Handle plugin, int numParams)
+{
+	Function startVote = GetNativeFunction(1);
+	Function cancelVote = GetNativeFunction(2);
+	Function isVoteInProgress = GetNativeFunction(3);
+	int voteLimit = GetNativeCell(4);
+	
+	AddToForward(g_Forward_HandlerVoteStart, plugin, startVote);
+	AddToForward(g_Forward_HandlerCancelVote, plugin, cancelVote);
+	AddToForward(g_Forward_HandlerIsVoteInProgress, plugin, isVoteInProgress);
+	
+	g_OverrideVoteLimit = voteLimit;
+}
+
+public int Native_UnregisterVoteHandler(Handle plugin, int numParams)
+{
+	Function startVote = GetNativeFunction(1);
+	Function cancelVote = GetNativeFunction(2);
+	Function isVoteInProgress = GetNativeFunction(3);
+	int voteLimit = GetNativeCell(4);
+	
+	RemoveFromForward(g_Forward_HandlerVoteStart, plugin, startVote);
+	RemoveFromForward(g_Forward_HandlerCancelVote, plugin, cancelVote);
+	RemoveFromForward(g_Forward_HandlerIsVoteInProgress, plugin, isVoteInProgress);
+	
+	g_OverrideVoteLimit = -1;
 }
 
 public int Native_AddMapFilter(Handle plugin, int numParams)
@@ -410,6 +533,7 @@ public int Native_OverrideConVar(Handle plugin, int numParams)
 public int Native_ProcessRoundEnd(Handle plugin, int numParams)
 {
 	int winner = GetNativeCell(1);
+	int score = GetNativeCell(2);
 	
 	ProcessRoundEnd(winner);
 }
@@ -424,4 +548,23 @@ public int Native_SwapTeamScores(Handle plugin, int numParams)
 	int temp = g_WinCount[team1];
 	g_WinCount[team1] = g_WinCount[team2];
 	g_WinCount[team2] = temp;
+}
+
+public int Native_OverrideRoundEnd(Handle plugin, int numParams)
+{
+	g_bOverrideRoundEnd = GetNativeCell(1);
+}
+
+public int Native_AddGameFlags(Handle plugin, int numParams)
+{
+	MapChoices_GameFlags flags = GetNativeCell(1);
+	
+	g_GameFlags |= flags;
+}
+
+public int Native_RemoveGameFlags(Handle plugin, int numParams)
+{
+	MapChoices_GameFlags flags = GetNativeCell(1);
+	
+	g_GameFlags &= ~flags;
 }

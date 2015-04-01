@@ -581,8 +581,20 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 				
 				int pMapData[mapdata_t];
 				
-				// Trim the .bsp from the end and maps/ from the start
-				strcopy(pMapData[MapData_Map], trimEnd, filePath[5]);
+				// Find the number of characters to skip
+				int size = strlen(directory);
+				if (FindCharInString(directory, '/') > -1)
+				{
+					size++;
+				}
+				
+				if (size >= strlen(filePath))
+				{
+					continue;
+				}
+				
+				// Trim the .bsp from the end and directory from the start
+				strcopy(pMapData[MapData_Map], trimEnd, filePath[size]);
 				
 				if (!IsMapValid(pMapData[MapData_Map]))
 					continue;
@@ -780,9 +792,8 @@ static void DumpCache(ArrayList compat_list)
 }
 
 // native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
-public int LoadMapList(Handle plugin, int numParams)
+public int Native_ReadMapList(Handle plugin, int numParams)
 {
-	//char[] str;
 	ArrayList pArray;
 	int addr, flags; // addr is a ptr in C++
 	ArrayList pNewArray;
@@ -795,6 +806,18 @@ public int LoadMapList(Handle plugin, int numParams)
 	GetNativeString(3, str, length+1);
 	flags = GetNativeCell(4);
 	
+	pNewArray = LoadMapList(pArray, addr, str, flags, plugin);
+
+	SetNativeCellRef(2, addr); // Update serial with the copy from UpdateMapList
+	
+	return view_as<int>(pNewArray);	
+}
+
+// Internal function to call
+ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY, Handle plugin=null)
+{
+	ArrayList pNewArray;
+	
 	/* Make sure the input Handle is valid */
 	// Not checkable in SourcePawn
 
@@ -803,21 +826,20 @@ public int LoadMapList(Handle plugin, int numParams)
 	
 	/* Try to get the map list. */
 	// In C++, hndl is pArray... the array inside the Handle, but SourcePawn doesn't differentiate between them
-	if ((pNewArray = UpdateMapList(pArray, str, addr, flags, plugin)) == null)
+	if ((pNewArray = UpdateMapList(pArray, str, serial, flags, plugin)) == null)
 	{
-		return view_as<int>(INVALID_HANDLE);
+		return null;
 	}
 
-	SetNativeCellRef(2, addr); // Update serial with the copy from UpdateMapList
-	
 	/* If the user wanted a new array, create it now. */
 	if (pArray == INVALID_HANDLE)
 	{
+		// Removed irrelevant null check on handle creation, not applicable to SourcePawn
 		pArray = view_as<ArrayList>(CloneHandle(pNewArray, plugin)); // Changes ownership
 		delete pNewArray; // Delete our copy of this handle
 	}
 	
-	return view_as<int>(pArray);
+	return pArray;
 }
 
 public int Native_SetMapListCompatBind(Handle plugin, int numParams)

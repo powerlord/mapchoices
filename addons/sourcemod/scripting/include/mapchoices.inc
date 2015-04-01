@@ -54,13 +54,13 @@ enum MapChoices_Team
 	MapChoices_Team4,
 }
 
-enum MapChoices_MapListType:
+enum MapChoices_MapListType
 {
 	MapChoicesMapList_Classic,
 	MapChoicesMapList_Advanced,
 }
 
-enum MapChoices_NominateResult:
+enum MapChoices_NominateResult
 {
 	MapChoicesNominateResult_Added,		/** The map was added */
 	MapChoicesNominateResult_Rejected,	/** The map was rejected by a map filter */
@@ -68,7 +68,7 @@ enum MapChoices_NominateResult:
 	MapChoicesNominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
 };
 
-enum MapChoices_MapChange:
+enum MapChoices_MapChange
 {
 	MapChoicesMapChange_Instant,		/** Change map as soon as the voting results have come in */
 	MapChoicesMapChange_RoundEnd,		/** Change map at the end of the round */
@@ -92,7 +92,7 @@ enum MapChoices_ConVarOverride
 	MapChoicesConVar_MaxRounds,
 }
 
-// Classic-style enum because it's an enum-struct
+// 1.6-style enum because it's an enum-struct
 // Used to store data about a map.
 // Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
 enum mapdata_t
@@ -103,8 +103,9 @@ enum mapdata_t
 	StringMap:MapData_GroupAttributes,
 };
 
-// Classic-style enum to store group data
+// 1.6-style enum to store group data
 // Note that the StringMap may be null if there were no attributes
+// "classic" will not actually exist, so don't bother looking for it
 enum groupdata_t
 {
 	String:GroupData_Group[MAX_GROUP_LENGTH+1],
@@ -260,6 +261,9 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
  */
 native void MapChoices_StartVote(MapChoices_MapChange when, ArrayList mapList=null, const char[] mapGroup="mapchoices");
 
+// --------------------------------------------------------------------------------
+// Forwards used by MapChoices subplugins for telling when votes start and finish
+
 /**
  * A map vote started.
  */
@@ -294,11 +298,14 @@ forward void MapChoices_NominationAdded(const char[] map, int owner);
  */
 forward void MapChoices_NominationRemoved(const char[] map, int owner);
 
+// --------------------------------------------------------------------------------
+// Functions used by Vote System plugins (read: NativeVotes)
+
 // Private forwards for vote managers
 
-typedef MapChoices_HandlerStartVote = function void (ArrayList mapList);
-typedef MapChoices_HandlerCancelVote = function void ();
-typedef MapChoices_HandlerIsVoteInProgress = function bool ();
+typedef MapChoices_HandlerStartVote = function Action (ArrayList mapList, bool runoff);
+typedef MapChoices_HandlerCancelVote = function Action ();
+typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
 
 /**
  * Override the main vote system with a different one.
@@ -310,8 +317,11 @@ typedef MapChoices_HandlerIsVoteInProgress = function bool ();
  * @param isVoteInProgress	The function to call to determine whether or not a vote is in progress
  * @param voteLimit		The number of items that can be in a vote.
  */
-native void MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
-native void MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress);
+native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
+native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress);
+
+// --------------------------------------------------------------------------------
+// Functions used by Map Filter plugins
 
 /**
  * Allow the named map to be played?
@@ -364,6 +374,9 @@ native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
  */
 native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
 
+// --------------------------------------------------------------------------------
+// Functions used by Game plugins
+
 /**
  * If a plugin has defined a ChangeMap function, it will be called instead of ForceChangeMap.
  * 
@@ -399,6 +412,9 @@ native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimit roundLimitHandle
 native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
 
 
+native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
+native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
+
 /**
  * Called by Game plugins to swap scores.
  * Swap the scores for team 1 and team 2.
@@ -428,6 +444,9 @@ native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, 
  * @return		true if plugin was registered.
  */
 native bool MapChoices_UnregisterGamePlugin();
+
+// --------------------------------------------------------------------------------
+// Stocks used for workshop map names
 
 /**
  * Remove the path from the map name
@@ -512,6 +531,9 @@ stock FindMapStringInMapArray(ArrayList array, const char[] map)
 	
 	return -1;
 }
+
+// --------------------------------------------------------------------------------
+// Standard plugin stuff
 
 public SharedPlugin __pl_mapchoices = 
 {
