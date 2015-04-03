@@ -192,16 +192,6 @@ native bool MapChoices_EndOfMapVoteEnabled();
 native int MapChoices_GetStartRounds();
 
 /**
- * Process round end logic.
- * 
- * Call this from a game plugin if a game uses a different event.
- * 
- * @param winner		Which team won
- * @param score		What that team's score is.  If -1, use internal scores
- */
-native void MapChoices_ProcessRoundEnd(int winner, int score=-1);
-
-/**
  * Clean up a map list ArrayList
  * 
  * A map list Handle is an adt_array of mapdata_t entries.
@@ -377,6 +367,10 @@ native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
 // --------------------------------------------------------------------------------
 // Functions used by Game plugins
 
+native bool MapChoices_WillChangeAtRoundEnd();
+
+//typedef MapChoices_EndRound = function Action ();
+
 /**
  * If a plugin has defined a ChangeMap function, it will be called instead of ForceChangeMap.
  * 
@@ -389,7 +383,6 @@ typedef MapChoices_ChangeMap = function Action (const char[] map, bool isRoundEn
 typedef MapChoices_WinLimit = function Action (int team, int score);
 
 typedef MapChoices_RoundLimit = function Action (int rounds);
-
 
 /**
  * Register a game plugin
@@ -411,6 +404,8 @@ native bool MapChoices_RemoveWinlimitCheck(MapChoices_WinLimit winLimitHandler);
 native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
 native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
 
+//native void MapChoices_AddRoundEnd(MapChoices_EndRound roundEndHandler);
+//native void MapChoices_RemoveRoundEnd(MapChoices_EndRound roundEndHandler);
 
 native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
 native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
@@ -437,100 +432,25 @@ native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, Ma
 native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar);
 
 /**
- * Unregister a game plugin
+ * Reset a ConVar back to its default value.
  * 
- * @param overrideRoundEnd	Prevent normal round end hooks from firing
+ * Used by game plugins that exit
  * 
- * @return		true if plugin was registered.
+ * @param conVar		Which conVar are we resetting?
+ * 
+ * NOTE: This function isn't really necessary but is included for completenesss.
  */
-native bool MapChoices_UnregisterGamePlugin();
-
-// --------------------------------------------------------------------------------
-// Stocks used for workshop map names
+native bool MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
 
 /**
- * Remove the path from the map name
- * This was intended to remove workshop paths.
- * Used internally by MapEqual and FindMapStringInArray.
+ * Process round end logic.
  * 
- * @param map			Map name
- * @param destination	String to copy map name to
- * @param maxlen		Length of destination string
+ * Call this from a game plugin if a game uses a different event.
  * 
- * @return			True if path was removed, false if map and destination are the same
+ * @param winner		Which team won
+ * @param score		What that team's score is.  If -1, use internal scores
  */
-stock bool RemoveMapPath(const char[] map, char[] destination, int maxlen)
-{
-	if (strlen(map) < 1)
-	{
-		ThrowError("Bad map name: %s", map);
-	}
-	
-	// UNIX paths
-	int pos = FindCharInString(map, '/', true);
-	if (pos == -1)
-	{
-		// Windows paths
-		pos = FindCharInString(map, '\\', true);
-		if (pos == -1)
-		{
-			// Copy the path out unchanged, but return false
-			// This was added by request, but also simplifies MapEqual a LOT
-			strcopy(destination, maxlen, map);
-			return false;
-		}
-	}
-
-	// pos + 1 is because pos is the last / or \ location and we want to start one char further
-	// maxlen is because strcopy will auto-stop if it hits '\0' before maxlen
-	strcopy(destination, maxlen, map[pos+1]);
-	
-	return true;
-}
-
-/**
- * Check if two maps are the same map.
- * Takes workshop paths into account.
- * 
- * @param map		First map
- * @param map2	Second map
- * 
- * @return		true if they're the same map, false if not.
- */
-stock bool MapEqual(const char[] map, const char[] map2)
-{
-	char pathlessMap[PLATFORM_MAX_PATH];
-	char pathlessMap2[PLATFORM_MAX_PATH];
-	
-	RemoveMapPath(map, pathlessMap, sizeof(pathlessMap));
-	RemoveMapPath(map2, pathlessMap2, sizeof(pathlessMap2));
-	
-	return !strcmp(pathlessMap, pathlessMap2);
-}
-
-/**
- * A replacement for FindStringInArray, but using MapEqual to compare elements.
- * Returns the index for the first occurence of the provided map. If the map cannot be located, -1 will be returned.
- * 
- * @param array		ArrayList Handle.
- * @param map			Map to search for
- *
- * @return 			Array index, or -1 on failure
- */
-stock FindMapStringInMapArray(ArrayList array, const char[] map)
-{
-	for (new i = 0; i < array.Length; i++)
-	{
-		char arrayMap[PLATFORM_MAX_PATH];
-		array.GetString(i, arrayMap, sizeof(arrayMap));
-		if (MapEqual(arrayMap, map))
-		{
-			return i;
-		}
-	}
-	
-	return -1;
-}
+native void MapChoices_ProcessRoundEnd(int winner, int score=-1);
 
 // --------------------------------------------------------------------------------
 // Standard plugin stuff

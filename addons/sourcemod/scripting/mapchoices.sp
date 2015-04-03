@@ -33,7 +33,9 @@
 #include <sourcemod>
 
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
+#include "include/map_workshop_functions.inc"
 #include <sdktools>
+
 #pragma semicolon 1
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
@@ -120,6 +122,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_ProcessRoundEnd", Native_ProcessRoundEnd);
 	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
 	CreateNative("MapChoices_SwapTeamScores", Native_SwapTeamScores);
+	CreateNative("MapChoices_WillChangeAtRoundEnd", Native_WillChangeAtRoundEnd);
 	
 	RegPluginLibrary("mapchoices");
 }
@@ -363,15 +366,6 @@ void ChangeMap(bool isRoundEnd)
 		{
 			GameEnd();
 		}
-		
-		int entity = -1;
-		
-		entity = FindEntityByClassname(-1, "game_end");
-		
-		if (entity == -1)
-		{
-			entity = CreateEntityByName("game_end");
-		}
 	}
 }
 
@@ -414,9 +408,9 @@ void GameEnd()
 		}
 	}
 	
-	Event gameEndEvent = CreateEvent("game_end");
-	gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
-	gameEndEvent.Fire();
+	//Event gameEndEvent = CreateEvent("game_end");
+	//gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
+	//gameEndEvent.Fire();
 	
 //	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, _, TIMER_FLAG_NO_MAPCHANGE);
 }
@@ -567,4 +561,9 @@ public int Native_RemoveGameFlags(Handle plugin, int numParams)
 	MapChoices_GameFlags flags = GetNativeCell(1);
 	
 	g_GameFlags &= ~flags;
+}
+
+public int Native_WillChangeAtRoundEnd(Handle plugin, int numParams)
+{
+	return g_bChangeAtRoundEnd;
 }

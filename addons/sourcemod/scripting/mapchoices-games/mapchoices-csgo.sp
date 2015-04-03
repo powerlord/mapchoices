@@ -112,9 +112,13 @@ public void OnMapStart()
 public void OnAllPluginsLoaded()
 {
 	// Override round end mechanics
-	//MapChoices_RegisterGamePlugin(true);
-	MapChoices_GamePluginOverrideRoundEnd(true);
-	
+	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
+	MapChoices_OverrideConVar();
+}
+
+public void OnPluginEnd()
+{
+	MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
 }
 
 public void OnConfigsExecuted()
@@ -150,9 +154,7 @@ public void Event_PhaseEnd(Event event, const char[] name, bool dontBroadcast)
 	}
 
 	/* No intermission yet, so this must be half time. Swap the score counters. */
-	int t_score = g_winCount[2];
-	g_winCount[2] =  g_winCount[3];
-	g_winCount[3] = t_score;
+	MapChoices_SwapTeamScores();
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
@@ -235,7 +237,7 @@ public Action CSGO_ChangeMap(const char[] map, bool isRoundEnd)
 	return Plugin_Handled;
 }
 
-Action Timer_ChangeMap(Handle timer, DataPack data)
+public Action Timer_ChangeMap(Handle timer, DataPack data)
 {
 	char map[PLATFORM_MAX_PATH];
 	data.ReadString(map, sizeof(map));
