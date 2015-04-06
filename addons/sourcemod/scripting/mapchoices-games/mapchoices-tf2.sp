@@ -57,10 +57,11 @@ ConVar g_Cvar_BonusTime;
 
 ConVar g_Cvar_SuddenDeath;
 
-
 int g_TotalRounds;
 
-int g_gameType = GameType_Unknown;
+int g_ObjectiveEnt = INVALID_ENT_REFERENCE;
+
+int g_GameType = GameType_Unknown;
 
 bool g_bOldSuddenDeath;
 
@@ -92,6 +93,7 @@ public void OnPluginStart()
 	
 	HookEvent("teamplay_win_panel", Event_TeamPlayWinPanel);
 	HookEvent("arena_win_panel", Event_TeamPlayWinPanel);
+	HookEvent("pve_win_pane", Event_PVEWinPanel); // Should be called for MvM round end
 }
 
 public void OnMapStart()
@@ -115,7 +117,7 @@ public void OnPluginEnd()
 
 public void OnConfigsExecuted()
 {
-	g_gameType = GameRules_GetProp("m_nGameType");
+	g_GameType = GameRules_GetProp("m_nGameType");
 	
 	g_Cvar_VoteNextLevel.BoolValue = false;
 }
@@ -131,6 +133,9 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 	
 	int blueScore = event.GetInt("blue_score");
 	int redScore = event.GetInt("red_score");
+	
+	// Note: We do not call MapChoices_ProcessRoundEnd in TF2.
+	// This is because TF2 has custom logic for win limit due to mp_windifference
 	
 	if (StrEqual(name, "arena_win_panel") || event.GetInt("round_complete") == 1)
 	{
@@ -153,23 +158,61 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 	}
 }
 
-void CheckMaxRounds(int roundCount)
+void ValidateObjectiveEntity()
 {
+	if (!IsValidEntity(g_ObjectiveEnt))
+	{
+		int entity = FindEntityByClassname(-1, "tf_objective_resource");
+		
+		if (IsValidEntity(entity))
+		{
+			g_ObjectiveEnt = EntIndexToEntRef(entity);
+		}
+	}
 }
 
-void CheckWinLimit(int winnerScore, int loserScore)
+public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast)
 {
-	if (g_Cvar_Winlimit)
+	int winner = event.GetInt("winning_team");
+	
+	if (winner == view_as<int>(MapChoices_Team1))
 	{
-		int winlimit = g_Cvar_Winlimit.IntValue;
-		if (winlimit)
-		{			
-			if (winnerScore >= (winlimit - MapChoices_GetStartRounds()))
+		g_TotalRounds++;
+		
+		ValidateObjectiveEntity();
+		
+		if (IsValidEntity(g_ObjectiveEnt))
+		{
+			//TODO Check if m_nMannVsMachineWaveCount is the current wave number
+			if (g_TotalRounds >= GetEntProp(g_ObjectiveEnt, Prop_Send, "m_nMannVsMachineWaveCount") - 1)
 			{
 				MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
 			}
 		}
 	}
+}
+
+void CheckMaxRounds(int roundCount)
+{
+	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_GetStartRounds())
+	{
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+	}
+}
+
+void CheckWinLimit(int winnerScore, int loserScore)
+{
+	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_GetStartRounds()))
+	{
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+	}
+	
+	// Win Difference seems to be exclusive to TF2	
+	if (g_Cvar_Windiference.IntValue && winnerScore >= (g_Cvar_WindiferenceMin.IntValue - 1) && (winnerScore - loserScore) >= (g_Cvar_Windiference.IntValue - 1))
+	{
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+	}
+	
 }
 
 public Action TF2_ChangeMap(const char[] map, bool isRoundEnd)

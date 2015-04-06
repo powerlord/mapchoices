@@ -52,6 +52,9 @@ MapChoices_GameFlags g_GameFlags = MapChoicesGame_None;
 ConVar g_Cvar_Enabled;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
+ConVar g_Cvar_FragVoteTime;
+ConVar g_Cvar_TimeleftVoteTime;
+ConVar g_Cvar_RoundVoteTime;
 
 // Valve ConVars
 ConVar g_Cvar_Timelimit;
@@ -137,8 +140,12 @@ public void OnPluginStart()
 	
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
-	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long to wait before we retry the vote if a vote is already running?", FCVAR_PLUGIN, true, 1.0, true, 15.0);
+	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5", "How long (in seconds) to wait before we retry the vote if a vote is already running?", FCVAR_PLUGIN, true, 1.0, true, 15.0);
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote?", FCVAR_PLUGIN, true, 2.0, true, 8.0);
+	
+	g_Cvar_FragVoteTime = CreateConVar("mapchoices_frag_votestart", "5", "If a person is this close to the frag limit, start a vote.", FCVAR_PLUGIN, true, 1.0);
+	g_Cvar_TimeleftVoteTime = CreateConVar("mapchoices_timeleft_votestart", "6", "If map timelimit is this close (in minutes) to ending, start a vote.  Note: TF2 will end if less than 5 minutes is left on the clock.", FCVAR_PLUGIN, true, 0.0);
+	g_Cvar_RoundVoteTime = CreateConVar("mapchoices_maxrounds_votestart", "2", "If this few rounds are left, start a vote.", FCVAR_PLUGIN, true, 0.0);
 	
 	g_Cvar_Timelimit = FindConVar("mp_timelimit");
 
@@ -167,6 +174,7 @@ public void OnPluginStart()
 	g_RecentMapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
 	
 	HookEvent("round_end", Event_RoundEnd);
+	HookEvent("player_death", Event_PlayerDeath);
 	
 	AutoExecConfig(true, "mapchoices");
 }
@@ -323,7 +331,18 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 		
 	}
 	
+	
 	// Missing logic to actually check the rounds and start the vote.
+}
+
+public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
+{
+	if (	g_GameFlags & MapChoicesGame_SupportsFragLimit != MapChoicesGame_SupportsFragLimit)
+	{
+		return;
+	}
+	
+	// TODO frag tracking
 }
 
 void ProcessRoundEnd(int winner, int score=-1)
