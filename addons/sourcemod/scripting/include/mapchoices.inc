@@ -72,7 +72,7 @@ enum MapChoices_MapChange
 {
 	MapChoicesMapChange_Instant,		/** Change map as soon as the voting results have come in */
 	MapChoicesMapChange_RoundEnd,		/** Change map at the end of the round */
-	MapChoicesMapChange_MapEnd,		/** Change the sm_nextmap cvar */
+	MapChoicesMapChange_MapEnd,			/** Change the sm_nextmap cvar */
 };
 
 enum MapChoices_GameFlags
@@ -82,14 +82,6 @@ enum MapChoices_GameFlags
 	MapChoicesGame_SupportsFragLimit = (1<<1),	/** Game supports frag limits: HL2:DM, Neotokyo (?) */
 	MapChoicesGame_OverrideRoundEnd = (1<<2),	/** Game plugin will handle round_end event manually */
 	MapChoicesGame_AvoidHintbox = (1<<3),		/** Game text should not be displayed in hintboxes: HL2:DM */
-}
-
-enum MapChoices_ConVarOverride
-{
-	MapChoicesConVar_BonusTime,
-	MapChoicesConVar_Winlimit,
-	MapChoicesConVar_FragLimit,
-	MapChoicesConVar_MaxRounds,
 }
 
 // 1.6-style enum because it's an enum-struct
@@ -186,10 +178,6 @@ native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const c
  * @noreturn
  */
 native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType:mapListType=MapChoicesMapList_Classic);
-
-native bool MapChoices_EndOfMapVoteEnabled();
-
-native int MapChoices_GetStartRounds();
 
 /**
  * Clean up a map list ArrayList
@@ -378,31 +366,20 @@ native bool MapChoices_WillChangeAtRoundEnd();
  * @param isRoundEnd	true if this is at the end of the round, false otherwise.
  * @return Plugin_Handled or higher to handle map change or Plugin_Continue to let MapChoices handle it
  */
-typedef MapChoices_ChangeMap = function Action (const char[] map, bool isRoundEnd);
+typedef MapChoices_ChangeMapForward = function Action (const char[] map, bool isRoundEnd);
 
-typedef MapChoices_WinLimit = function Action (int team, int score);
+typedef MapChoices_WinLimitForward = function Action (int team, int score);
 
-typedef MapChoices_RoundLimit = function Action (int rounds);
+typedef MapChoices_RoundLimitForward = function Action (int rounds);
 
-/**
- * Register a game plugin
- * 
- * At the moment, this is just present so we can stop the main plugin from processing round_end events
- * 
- * @param overrideRoundEnd	Prevent normal round end hooks from firing
- * 
- * @return		true if plugin was registered.
- */
-native void MapChoices_GamePluginOverrideRoundEnd(bool overrideRoundEnd);
+native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
+native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 
-native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
-native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMap changeMapHandler);
+native bool MapChoices_AddWinlimitCheck(MapChoices_WinLimitForward winLimitHandler);
+native bool MapChoices_RemoveWinlimitCheck(MapChoices_WinLimitForward winLimitHandler);
 
-native bool MapChoices_AddWinlimitCheck(MapChoices_WinLimit winLimitHandler);
-native bool MapChoices_RemoveWinlimitCheck(MapChoices_WinLimit winLimitHandler);
-
-native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
-native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHandler);
+native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimitForward roundLimitHandler);
+native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimitForward roundLimitHandler);
 
 //native void MapChoices_AddRoundEnd(MapChoices_EndRound roundEndHandler);
 //native void MapChoices_RemoveRoundEnd(MapChoices_EndRound roundEndHandler);
@@ -410,47 +387,8 @@ native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimit roundLimitHan
 native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
 native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
 
-/**
- * Called by Game plugins to swap scores.
- * Swap the scores for team 1 and team 2.
- * 
- * @param team1	First team to swap.
- * @param team2	Second team to swap.
- */
-native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, MapChoices_Team team2=MapChoices_Team2);
-
-/**
- * Override one of the plugins cvars
- * 
- * Used by game plugins to alter that ConVars used
- * 
- * @param conVar		Which conVar are we overriding?
- * @param name		name of the new ConVar to use
- * 
- * NOTE: ConVars are owned by core, not by individual plugins.  They can not be closed or cloned.
- */
-native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar);
-
-/**
- * Reset a ConVar back to its default value.
- * 
- * Used by game plugins that exit
- * 
- * @param conVar		Which conVar are we resetting?
- * 
- * NOTE: This function isn't really necessary but is included for completenesss.
- */
-native bool MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
-
-/**
- * Process round end logic.
- * 
- * Call this from a game plugin if a game uses a different event.
- * 
- * @param winner		Which team won
- * @param score		What that team's score is.  If -1, use internal scores
- */
-native void MapChoices_ProcessRoundEnd(int winner, int score=-1);
+// For subplugins
+native MapChoices_GameFlags MapChoices_GetGameFlags();
 
 // --------------------------------------------------------------------------------
 // Standard plugin stuff
