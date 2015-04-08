@@ -40,13 +40,8 @@
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
 
-int roundCount;
 StringMap g_Trie_NominatedMaps;
 char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
-
-int g_WinCount[MapChoices_Team];
-
-MapChoices_GameFlags g_GameFlags = MapChoicesGame_None;
 
 //ConVars
 ConVar g_Cvar_Enabled;
@@ -126,11 +121,6 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
 	
-	// Game plugin natives
-	CreateNative("MapChoices_AddGameFlags", Native_AddGameFlags);
-	CreateNative("MapChoices_RemoveGameFlags", Native_RemoveGameFlags);
-	
-	CreateNative("MapChoices_ProcessRoundEnd", Native_ProcessRoundEnd);
 	CreateNative("MapChoices_WillChangeAtRoundEnd", Native_WillChangeAtRoundEnd);
 	
 	RegPluginLibrary("mapchoices");
@@ -188,7 +178,8 @@ public void OnPluginStart()
 	g_RecentMapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
 	
 	HookEvent("round_end", Event_RoundEnd);
-	HookEvent("player_death", Event_PlayerDeath);
+	HookEventEx("round_win", Event_RoundEnd);
+	HookEventEx("teamplay_round_win", Event_RoundEnd);
 	
 	AutoExecConfig(true, "mapchoices");
 }
@@ -200,12 +191,6 @@ public void OnMapStart()
 	
 	g_bMapVoteInProgress = false;
 	g_bMapVoteCompleted = false;
-	
-	// Reset win counters
-	for (int i = 0; i < sizeof(g_WinCount); i++)
-	{
-		g_WinCount[i] = 0;
-	}
 }
 
 public void OnMapEnd()
@@ -426,42 +411,15 @@ stock ArrayList ReadMapChoicesList(ArrayList kv=null, int &serial=1, const char[
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
-	if (g_GameFlags & MapChoicesGame_OverrideRoundEnd || g_bTempIgnoreRoundEnd)
+	if (g_bTempIgnoreRoundEnd)
 	{
 		return;
 	}
-	
-	++roundCount;
-	
-	if (g_bChangeAtRoundEnd)
-	{
-		
-	}
-	
-	
-	// Missing logic to actually check the rounds and start the vote.
-}
-
-public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast)
-{
-	if (	g_GameFlags & MapChoicesGame_SupportsFragLimit != MapChoicesGame_SupportsFragLimit)
-	{
-		return;
-	}
-	
-	// TODO frag tracking
-}
-
-void ProcessRoundEnd(int winner, int score=-1)
-{
-	++roundCount;
 	
 	if (g_bChangeAtRoundEnd)
 	{
 		ChangeMap(true);
 	}
-	
-	//TODO finish this logic
 }
 
 void ChangeMap(bool isRoundEnd)
@@ -607,28 +565,6 @@ public int Native_StartVote(Handle plugin, int numParams)
 	ArrayList mapList = view_as<ArrayList>(GetNativeCell(2));
 	
 	StartVote(when, mapList);
-}
-
-public int Native_ProcessRoundEnd(Handle plugin, int numParams)
-{
-	int winner = GetNativeCell(1);
-	int score = GetNativeCell(2);
-	
-	ProcessRoundEnd(winner);
-}
-
-public int Native_AddGameFlags(Handle plugin, int numParams)
-{
-	MapChoices_GameFlags flags = GetNativeCell(1);
-	
-	g_GameFlags |= flags;
-}
-
-public int Native_RemoveGameFlags(Handle plugin, int numParams)
-{
-	MapChoices_GameFlags flags = GetNativeCell(1);
-	
-	g_GameFlags &= ~flags;
 }
 
 public int Native_WillChangeAtRoundEnd(Handle plugin, int numParams)

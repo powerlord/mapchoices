@@ -46,8 +46,9 @@ enum MapChoices_ConVarOverride
 	MapChoicesConVar_MaxRounds,
 }
 
-
 native bool MapChoices_EndOfMapVoteEnabled();
+
+native bool MapChoices_HasEndOfMapVoteFinished();
 
 native int MapChoices_GetStartRounds();
 
@@ -68,7 +69,7 @@ native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, Ma
  * @param winner		Which team won
  * @param score		What that team's score is.  If -1, use internal scores
  */
-native void MapChoices_ProcessRoundEnd(int winner, int score=-1);
+native void MapChoices_ProcessRoundEnd(MapChoices_Team winner, int score=-1);
 
 /**
  * Override one of the plugins cvars

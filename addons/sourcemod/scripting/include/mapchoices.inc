@@ -237,7 +237,7 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
  * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
  * @param mapGroup	Which mapgroup should we use?
  */
-native void MapChoices_StartVote(MapChoices_MapChange when, ArrayList mapList=null, const char[] mapGroup="mapchoices");
+native void MapChoices_StartVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices");
 
 // --------------------------------------------------------------------------------
 // Forwards used by MapChoices subplugins for telling when votes start and finish
@@ -281,7 +281,7 @@ forward void MapChoices_NominationRemoved(const char[] map, int owner);
 
 // Private forwards for vote managers
 
-typedef MapChoices_HandlerStartVote = function Action (ArrayList mapList, bool runoff);
+typedef MapChoices_HandlerStartVote = function Action (int duration, ArrayList mapList, int[] clients, int numClients, bool runoff);
 typedef MapChoices_HandlerCancelVote = function Action ();
 typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
 

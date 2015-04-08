@@ -32,7 +32,8 @@
  */
 #include <sourcemod>
 #include <sdktools>
-#include "../include/mapchoices" // Include our own file to gain access to enums and the like
+#include "../include/mapchoices"
+#include "../include/mapchoices-mapend"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -143,19 +144,32 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 		
 		CheckMaxRounds(g_TotalRounds);
 		
-		switch (event.GetInt("winning_team"))
+		MapChoices_Team winningTeam = view_as<MapChoices_Team>(event.GetInt("winning_team"));
+		
+		int winnerScore = 0;
+		int loserScore = 0;
+		
+		switch (winningTeam)
 		{
 			case MapChoices_Team1:
 			{
+				winnerScore = redScore;
+				loserScore = blueScore;
 				CheckWinLimit(redScore, blueScore);
 			}
 			
 			case MapChoices_Team2:
 			{
-				CheckWinLimit(blueScore, redScore);
+				winnerScore = blueScore;
+				loserScore = redScore;
 			}
 		}
+
+		CheckWinLimit(winnerScore, loserScore);
+
+		//MapChoices_ProcessRoundEnd(winningTeam, winnerScore);
 	}
+	
 }
 
 void ValidateObjectiveEntity()

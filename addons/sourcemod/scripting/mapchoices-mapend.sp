@@ -42,7 +42,7 @@
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
 
-int roundCount;
+int g_RoundCount;
 
 int g_WinCount[MapChoices_Team];
 
@@ -66,10 +66,6 @@ ConVar g_Cvar_MaxRounds;
 // ConVar g_Cvar_ChatTime;
 
 Handle g_Forward_ChangeMap;
-
-// Round End stuff
-bool g_bChangeAtRoundEnd = false;
-bool g_bTempIgnoreRoundEnd = false;
 
 int g_VoteStartRound = 0;
 
@@ -105,7 +101,7 @@ public void OnPluginStart()
 	
 	// Core map vote starting stuff
 	g_Cvar_FragVoteStart = CreateConVar("mapchoices_frag_votestart", "5", "If a person is this close to the frag limit, start a vote.", FCVAR_PLUGIN, true, 1.0);
-	g_Cvar_FragFromStart = CreateConVar("mapchoices_frag_fromstart", "0", "0: Start frags vote based on frags until frag limit. 1: Start frags vote on frags since map start.");
+	g_Cvar_FragFromStart = CreateConVar("mapchoices_frag_fromstart", "0", "0: Start frags vote based on frags until frag limit. 1: Start frags vote on frags since map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	
 	g_Cvar_TimelimitVoteStart = CreateConVar("mapchoices_timelimit_votestart", "6", "Start a vote based on the timelimit. Note: TF2 will end if less than 5 minutes is left on the clock.", FCVAR_PLUGIN, true, 0.0);
 	g_Cvar_TimelimitFromStart = CreateConVar("mapchoices_timelimit_fromstart", "0", "0: Start timeleft vote based on time before map changes. 1: Start timeleft vote based on time from map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
@@ -131,9 +127,6 @@ public void OnPluginStart()
 
 public void OnMapStart()
 {
-	g_bChangeAtRoundEnd = false;
-	g_bTempIgnoreRoundEnd = false;
-	
 	// Reset win counters
 	for (int i = 0; i < sizeof(g_WinCount); i++)
 	{
@@ -221,7 +214,7 @@ public void OnMapTimeLeftChanged()
 	if (GetMapTimeLeft(timeleft) && timeleft == 0 && GetClientCount() > 0)
 	{
 		// Time left is less than 0, so start vote
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd);
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
 	
 	// TODO Checks to see if timer reset
@@ -243,18 +236,14 @@ public void OnClientDisconnect_Post(int client)
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
-	if (MapChoices_GetGameFlags() & MapChoicesGame_OverrideRoundEnd || g_bTempIgnoreRoundEnd)
+	if (MapChoices_GetGameFlags() & MapChoicesGame_OverrideRoundEnd)
 	{
 		return;
 	}
 	
-	++roundCount;
-	
-	if (g_bChangeAtRoundEnd)
-	{
-		
-	}
-	
+	MapChoices_Team winner = view_as<MapChoices_Team>(event.GetInt("winner"));
+
+	ProcessRoundEnd(winner);
 	
 	// Missing logic to actually check the rounds and start the vote.
 }
@@ -270,114 +259,41 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 }
 
 // May move back to core
-void ProcessRoundEnd(int winner, int score=-1)
+void ProcessRoundEnd(MapChoices_Team winner, int score=-1)
 {
-	++roundCount;
-	
-	if (g_bChangeAtRoundEnd)
+	if (MapChoices_WillChangeAtRoundEnd())
 	{
-		ChangeMap(true);
+		return;
 	}
+	
+	++g_RoundCount;
+	
+	CheckMaxRounds(g_RoundCount);
+	
+	g_WinCount[winner]++;
 	
 	//TODO finish this logic
 }
 
-// May move back to core
-void ChangeMap(bool isRoundEnd)
+void CheckMaxRounds(int roundCount)
 {
-	Action result = Plugin_Continue;
-	
-	char map[PLATFORM_MAX_PATH];
-	
-	GetNextMap(map, sizeof(map));
-	
-	Call_StartForward(g_Forward_ChangeMap);
-	Call_PushString(map);
-	Call_PushCell(isRoundEnd);
-	Call_Finish(result);
-	
-	if (result < Plugin_Handled)
+	if (roundCount >= g_VoteStartRound)
 	{
-		if (!isRoundEnd)
-		{
-			RoundEnd();
-		}
-		
-		if (g_Cvar_BonusTime != null)
-		{
-			CreateTimer(g_Cvar_BonusTime.FloatValue - 0.2, Timer_GameEnd, _, TIMER_FLAG_NO_MAPCHANGE);
-		}
-		else
-		{
-			GameEnd();
-		}
+		// TODO Feels like something is missing here
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
 }
 
-// May move back to core
-public Action Timer_GameEnd(Handle timer)
+void CheckWinLimit()
 {
-	GameEnd();
 }
-
-// May move back to core
-// Note: This is the generic version.  Other games have better ways of doing this, such as CSS/CSGO's CS_TerminateRound method
-// and TF2's team_control_point_master's SetWinner or game_round_win entity
-void RoundEnd()
-{
-	Event roundEndEvent = CreateEvent("round_end");
-	if (roundEndEvent != null)
-	{
-		g_bTempIgnoreRoundEnd = true;
-		roundEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
-		roundEndEvent.SetInt("reason", 0); // Usually time ran out
-		roundEndEvent.SetString("message", "Map Change");
-		roundEndEvent.Fire();
-	}
-}
-
-// May move back to core
-void GameEnd()
-{
-	int entity = -1;
-	
-	entity = FindEntityByClassname(-1, "game_end");
-	
-	if (entity == -1)
-	{
-		entity = CreateEntityByName("game_end");
-		if (entity > -1)
-		{
-			if (DispatchSpawn(entity))
-			{
-				AcceptEntityInput(entity, "EndGame");
-				return;
-			}
-		}
-	}
-	
-	//Event gameEndEvent = CreateEvent("game_end");
-	//gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
-	//gameEndEvent.Fire();
-	
-//	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, _, TIMER_FLAG_NO_MAPCHANGE);
-}
-
-// May move back to core
-//public Action Timer_End(Handle timer)
-//{
-//	char map[PLATFORM_MAX_PATH];
-//	GetNextMap(map, sizeof(map));
-//	
-//	ForceChangeLevel(map, "Map Vote");
-//}
 
 // Natives
 
 // May move back to core
 public int Native_ProcessRoundEnd(Handle plugin, int numParams)
 {
-	int winner = GetNativeCell(1);
+	MapChoices_Team winner = GetNativeCell(1);
 	int score = GetNativeCell(2);
 	
 	ProcessRoundEnd(winner, score);
