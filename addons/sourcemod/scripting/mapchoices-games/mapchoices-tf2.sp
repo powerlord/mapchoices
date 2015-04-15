@@ -33,6 +33,8 @@
 #include <sourcemod>
 #include <sdktools>
 #include "../include/mapchoices"
+
+#undef REQUIRE_PLUGIN
 #include "../include/mapchoices-mapend"
 
 #pragma semicolon 1
@@ -50,8 +52,8 @@ enum
 
 ConVar g_Cvar_Winlimit;
 ConVar g_Cvar_Maxrounds;
-ConVar g_Cvar_Windiference;
-ConVar g_Cvar_WindiferenceMin;
+ConVar g_Cvar_Windifference;
+ConVar g_Cvar_WindifferenceMin;
 
 ConVar g_Cvar_VoteNextLevel;
 ConVar g_Cvar_BonusTime;
@@ -65,6 +67,8 @@ int g_ObjectiveEnt = INVALID_ENT_REFERENCE;
 int g_GameType = GameType_Unknown;
 
 bool g_bOldSuddenDeath;
+
+bool g_bMapEndRunning = false;
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
@@ -87,8 +91,8 @@ public void OnPluginStart()
 	g_Cvar_VoteNextLevel = FindConVar("sv_vote_issue_nextlevel_allowed");
 	g_Cvar_BonusTime = FindConVar("mp_bonusroundtime");
 	
-	g_Cvar_Windiference = FindConVar("mp_windifference");
-	g_Cvar_WindiferenceMin = FindConVar("mp_windifference_min");
+	g_Cvar_Windifference = FindConVar("mp_windifference");
+	g_Cvar_WindifferenceMin = FindConVar("mp_windifference_min");
 	
 	g_Cvar_SuddenDeath = FindConVar("mp_stalemate_enable");
 	
@@ -104,16 +108,51 @@ public void OnMapStart()
 
 public void OnAllPluginsLoaded()
 {
-	// Override round end mechanics
-	//MapChoices_RegisterGamePlugin(true);
+	g_bMapEndRunning = LibraryExists("mapchoices-mapend");
+	
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
 	MapChoices_AddChangeMapHandler(TF2_ChangeMap);
+	
+	// Override round end mechanics
+	MapEndLoad();
+}
+
+public OnLibraryAdded(char[] name)
+{
+	if (StrEqual(name, "mapchoices-mapend"))
+	{
+		
+	}
+}
+
+public OnLibraryRemoved(char[] name)
+{
+	if (StrEqual(name, "mapchoices-mapend"))
+	{
+		
+	}
+}
+
+
+void MapEndLoad()
+{
+	if (g_bMapEndRunning)
+	{
+	}
+}
+
+void MapEndUnload()
+{
+	if (g_bMapEndRunning)
+	{
+		MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
+		MapChoices_RemoveChangeMapHandler(TF2_ChangeMap);
+	}
 }
 
 public void OnPluginEnd()
 {
-	MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
-	MapChoices_RemoveChangeMapHandler(TF2_ChangeMap);
+	MapEndUnload();
 }
 
 public void OnConfigsExecuted()
@@ -130,6 +169,11 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 		char map[PLATFORM_MAX_PATH];
 		GetNextMap(map, sizeof(map));
 		TF2_ChangeMap(map, true);
+	}
+	
+	if (IsMvM() || !g_bMapEndRunning || !MapChoices_EndOfMapVoteEnabled() || MapChoices_HasEndOfMapVoteFinished())
+	{
+		return;
 	}
 	
 	int blueScore = event.GetInt("blue_score");
@@ -155,7 +199,6 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 			{
 				winnerScore = redScore;
 				loserScore = blueScore;
-				CheckWinLimit(redScore, blueScore);
 			}
 			
 			case MapChoices_Team2:
@@ -200,7 +243,7 @@ public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast
 			//TODO Check if m_nMannVsMachineWaveCount is the current wave number
 			if (g_TotalRounds >= GetEntProp(g_ObjectiveEnt, Prop_Send, "m_nMannVsMachineWaveCount") - 1)
 			{
-				MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+				MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 			}
 		}
 	}
@@ -210,7 +253,7 @@ void CheckMaxRounds(int roundCount)
 {
 	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_GetStartRounds())
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 }
 
@@ -218,13 +261,13 @@ void CheckWinLimit(int winnerScore, int loserScore)
 {
 	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_GetStartRounds()))
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 	
 	// Win Difference seems to be exclusive to TF2	
-	if (g_Cvar_Windiference.IntValue && winnerScore >= (g_Cvar_WindiferenceMin.IntValue - 1) && (winnerScore - loserScore) >= (g_Cvar_Windiference.IntValue - 1))
+	if (g_Cvar_Windifference.IntValue && winnerScore >= (g_Cvar_WindifferenceMin.IntValue - 1) && (winnerScore - loserScore) >= (g_Cvar_Windifference.IntValue - 1))
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 	
 }
@@ -247,7 +290,8 @@ public Action TF2_ChangeMap(const char[] map, bool isRoundEnd)
 
 public Action Timer_GameEnd(Handle timer, DataPack data)
 {
-	if (data.ReadCell())
+	bool isRoundEnd = data.ReadCell();
+	if (isRoundEnd)
 	{
 		g_Cvar_SuddenDeath.BoolValue = g_bOldSuddenDeath;
 	}

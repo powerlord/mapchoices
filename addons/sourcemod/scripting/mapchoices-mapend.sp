@@ -150,6 +150,11 @@ public void OnConfigsExecuted()
 
 void SetupRoundVote()
 {
+	if (!g_Cvar_Enabled.BoolValue)
+	{
+		return;
+	}
+	
 	if (g_Cvar_MaxRounds == null || g_Cvar_MaxRounds.IntValue <= 0)
 	{
 		g_VoteStartRound = 0;

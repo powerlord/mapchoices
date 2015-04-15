@@ -111,10 +111,12 @@ public SharedPlugin __pl_mapchoices =
 #if !defined REQUIRE_PLUGIN
 public void __pl_mapchoices-mapend_SetNTVOptional()
 {
-	MarkNativeAsOptional("MapChoices_RegisterVoteHandler");
-	MarkNativeAsOptional("MapChoices_UnregisterVoteHandler");
-	MarkNativeAsOptional("MapChoices_RegisterMapFilter");
-	MarkNativeAsOptional("MapChoices_UnregisterMapFilter");
-	
+	MarkNativeAsOptional("MapChoices_EndOfMapVoteEnabled");
+	MarkNativeAsOptional("MapChoices_HasEndOfMapVoteFinished");
+	MarkNativeAsOptional("MapChoices_GetStartRounds");
+	MarkNativeAsOptional("MapChoices_SwapTeamScores");
+	MarkNativeAsOptional("MapChoices_ProcessRoundEnd");
+	MarkNativeAsOptional("MapChoices_OverrideConVar");
+	MarkNativeAsOptional("MapChoices_ResetConVar");
 }
 #endif
