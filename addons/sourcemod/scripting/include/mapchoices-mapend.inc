@@ -97,7 +97,7 @@ native void MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
 // --------------------------------------------------------------------------------
 // Standard plugin stuff
 
-public SharedPlugin __pl_mapchoices = 
+public SharedPlugin __pl_mapchoices_mapend = 
 {
 	name = "mapchoices-mapend",
 	file = "mapchoices-mapend.smx",
@@ -109,7 +109,7 @@ public SharedPlugin __pl_mapchoices =
 };
 
 #if !defined REQUIRE_PLUGIN
-public void __pl_mapchoices-mapend_SetNTVOptional()
+public void __pl_mapchoices_mapend_SetNTVOptional()
 {
 	MarkNativeAsOptional("MapChoices_EndOfMapVoteEnabled");
 	MarkNativeAsOptional("MapChoices_HasEndOfMapVoteFinished");

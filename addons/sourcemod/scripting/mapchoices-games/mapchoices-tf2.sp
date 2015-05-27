@@ -117,7 +117,7 @@ public void OnAllPluginsLoaded()
 	MapEndLoad();
 }
 
-public OnLibraryAdded(char[] name)
+public void OnLibraryAdded(const char[] name)
 {
 	if (StrEqual(name, "mapchoices-mapend"))
 	{
@@ -125,7 +125,7 @@ public OnLibraryAdded(char[] name)
 	}
 }
 
-public OnLibraryRemoved(char[] name)
+public void OnLibraryRemoved(const char[] name)
 {
 	if (StrEqual(name, "mapchoices-mapend"))
 	{
@@ -243,7 +243,7 @@ public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast
 			//TODO Check if m_nMannVsMachineWaveCount is the current wave number
 			if (g_TotalRounds >= GetEntProp(g_ObjectiveEnt, Prop_Send, "m_nMannVsMachineWaveCount") - 1)
 			{
-				MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 			}
 		}
 	}
@@ -253,7 +253,7 @@ void CheckMaxRounds(int roundCount)
 {
 	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_GetStartRounds())
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 }
 
@@ -261,13 +261,13 @@ void CheckWinLimit(int winnerScore, int loserScore)
 {
 	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_GetStartRounds()))
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 	
 	// Win Difference seems to be exclusive to TF2	
 	if (g_Cvar_Windifference.IntValue && winnerScore >= (g_Cvar_WindifferenceMin.IntValue - 1) && (winnerScore - loserScore) >= (g_Cvar_Windifference.IntValue - 1))
 	{
-		MapChoices_StartVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
 	
 }

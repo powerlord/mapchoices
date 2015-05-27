@@ -185,7 +185,7 @@ native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name
  * A map list Handle is an adt_array of mapdata_t entries.
  * mapdata_t contains a Trie of MapAttributes, which is CloneHandled to the calling plugin
  */
-stock void CloseMapList(ArrayList &mapList)
+stock void MapChoices_CloseMapList(ArrayList &mapList)
 {
 	if (mapList == null)
 	{
@@ -215,20 +215,50 @@ stock void CloseMapList(ArrayList &mapList)
 native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner);
 
 /**
+ * Attempt to remove a map from the MapChoices map list.
+ * 
  * NOTE:  This may never be implemented until I see a good reason to keep it.
  * Remove a named map from the nominations list.
  * 
  * @param map		Map to remove.
+ * @return		True if the nomination was found and removed, or false if the nomination was not found
  */
 //native bool MapChoices_RemoveNominationByMap(const char[] map);
 
 /**
+ * Attempt to remove a map from the MapChoices map list.
+ * 
  * NOTE: This may never be implemented until I see a good reason to keep it.  Core can track this on its own.
  * Remove a player's nomination from the nominations list.
  * 
- * @param owner	Client whose nomination we will remove.
+ * @param owner	Client index of the nominator.
+ * @return		True if the nomination was found and removed, or false if the nomination was not found
  */
-//native bool MapChoices_RemoveNominationByClient(int client);
+//native bool MapChoices_RemoveNominationByOwner(int client);
+
+/**
+ * Gets the current list of excluded maps.
+ * 
+ * @param array	An ADT array handle to add the map strings to.
+ * @noreturn
+ */
+native void MapChoices_GetExcludedMapList(ArrayList array);
+
+/**
+ * Gets the current list of nominated maps.
+ * 
+ * @param maparray	An ADT array handle to add the map strings to.
+ * @param ownerarray	An optional ADT array handle to add the nominator client indexes to.
+ * @noreturn
+ */
+native void MapChoices_GetNominatedMapList(ArrayList maparray, ArrayList ownerarray=null);
+
+/**
+ * Checks if MapChoices will allow a vote
+ * 
+ * @return		True if a vote can be held, or false if MapChoices is already holding a vote.
+ */
+native bool MapChoices_CanStartVote();
 
 /**
  * Start a map vote.
@@ -237,7 +267,7 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
  * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
  * @param mapGroup	Which mapgroup should we use?
  */
-native void MapChoices_StartVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices");
+native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices");
 
 // --------------------------------------------------------------------------------
 // Forwards used by MapChoices subplugins for telling when votes start and finish
@@ -245,7 +275,7 @@ native void MapChoices_StartVote(MapChoices_MapChange when, const char[] module,
 /**
  * A map vote started.
  */
-forward void MapChoices_MapVoteStarted();
+forward void MapChoices_OnMapVoteStarted();
 
 /**
  * A map vote just ended and a map won.
@@ -256,7 +286,7 @@ forward void MapChoices_MapVoteStarted();
  * @param group	If the map was part of a group, which group it was from.
  * @noreturn
  */
-forward void MapChoices_MapVoteEnded(const char[] map, bool instant, const char[] group);
+forward void MapChoices_OnMapVoteEnded(const char[] map, bool instant, const char[] group);
 
 /**
  * A map was added to the nominations list.
@@ -265,7 +295,7 @@ forward void MapChoices_MapVoteEnded(const char[] map, bool instant, const char[
  * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
  * 
  */
-forward void MapChoices_NominationAdded(const char[] map, int owner);
+forward void MapChoices_OnNominationAdded(const char[] map, int owner);
 
 /**
  * A map has been removed from the nominations list.
@@ -274,7 +304,7 @@ forward void MapChoices_NominationAdded(const char[] map, int owner);
  * @param owner	The user that added the map.
  * 
  */
-forward void MapChoices_NominationRemoved(const char[] map, int owner);
+forward void MapChoices_OnNominationRemoved(const char[] map, int owner);
 
 // --------------------------------------------------------------------------------
 // Functions used by Vote System plugins (read: NativeVotes)
