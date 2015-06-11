@@ -60,6 +60,8 @@ ConVar g_Cvar_BonusTime;
 
 ConVar g_Cvar_SuddenDeath;
 
+//ConVar g_Cvar_ChatTime;
+
 int g_TotalRounds;
 
 int g_ObjectiveEnt = INVALID_ENT_REFERENCE;
@@ -95,6 +97,8 @@ public void OnPluginStart()
 	g_Cvar_WindifferenceMin = FindConVar("mp_windifference_min");
 	
 	g_Cvar_SuddenDeath = FindConVar("mp_stalemate_enable");
+	
+	//g_Cvar_ChatTime = FindConVar("mp_chattime");
 	
 	HookEvent("teamplay_win_panel", Event_TeamPlayWinPanel);
 	HookEvent("arena_win_panel", Event_TeamPlayWinPanel);
@@ -171,7 +175,7 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 		TF2_ChangeMap(map, true);
 	}
 	
-	if (IsMvM() || !g_bMapEndRunning || !MapChoices_EndOfMapVoteEnabled() || MapChoices_HasEndOfMapVoteFinished())
+	if (IsMvM() || !g_bMapEndRunning || !MapChoices_MapEnd_EndOfMapVoteEnabled() || MapChoices_MapEnd_HasEndOfMapVoteFinished())
 	{
 		return;
 	}
@@ -251,7 +255,7 @@ public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast
 
 void CheckMaxRounds(int roundCount)
 {
-	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_GetStartRounds())
+	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_MapEnd_GetStartRounds())
 	{
 		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
@@ -259,7 +263,7 @@ void CheckMaxRounds(int roundCount)
 
 void CheckWinLimit(int winnerScore, int loserScore)
 {
-	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_GetStartRounds()))
+	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_MapEnd_GetStartRounds()))
 	{
 		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
 	}
@@ -281,6 +285,7 @@ public Action TF2_ChangeMap(const char[] map, bool isRoundEnd)
 	}
 
 	DataPack data;
+	// Subtract 0.2 seconds because SourceMod timer resolution is only 0.1 seconds.
 	CreateDataTimer(g_Cvar_BonusTime.FloatValue - 0.2, Timer_GameEnd, data, TIMER_FLAG_NO_MAPCHANGE);
 	data.WriteCell(isRoundEnd);
 	data.Reset();

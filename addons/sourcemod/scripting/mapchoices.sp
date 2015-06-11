@@ -47,15 +47,10 @@ char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
 ConVar g_Cvar_Enabled;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
-ConVar g_Cvar_FragVoteStart;
-ConVar g_Cvar_FragFromStart;
-ConVar g_Cvar_TimelimitVoteStart;
-ConVar g_Cvar_TimelimitFromStart;
-ConVar g_Cvar_RoundVoteStart;
-ConVar g_Cvar_RoundFromStart;
+ConVar g_Cvar_WarningTime;
 
 // Valve ConVars
-ConVar g_Cvar_Timelimit;
+//ConVar g_Cvar_Timelimit;
 
 ConVar g_Cvar_BonusTime;
 ConVar g_Cvar_Winlimit;
@@ -123,6 +118,9 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	
 	CreateNative("MapChoices_WillChangeAtRoundEnd", Native_WillChangeAtRoundEnd);
 	
+	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
+	CreateNative("MapChoices_ResetConVar", Native_ResetConVar);
+	
 	RegPluginLibrary("mapchoices");
 }
   
@@ -137,20 +135,13 @@ public void OnPluginStart()
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", FCVAR_PLUGIN, true, 1.0, true, 15.0);
-	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote?", FCVAR_PLUGIN, true, 2.0, true, 8.0);
+	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", FCVAR_PLUGIN, true, 2.0, true, 8.0);
+	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", FCVAR_PLUGIN, true, 0.0, true, 60.0);
 	
 	// Core map vote starting stuff
-	g_Cvar_FragVoteStart = CreateConVar("mapchoices_frag_votestart", "5", "If a person is this close to the frag limit, start a vote.", FCVAR_PLUGIN, true, 1.0);
-	g_Cvar_FragFromStart = CreateConVar("mapchoices_frag_fromstart", "0", "0: Start frags vote based on frags until frag limit. 1: Start frags vote on frags since map start.");
-	
-	g_Cvar_TimelimitVoteStart = CreateConVar("mapchoices_timelimit_votestart", "6", "Start a vote based on the timelimit. Note: TF2 will end if less than 5 minutes is left on the clock.", FCVAR_PLUGIN, true, 0.0);
-	g_Cvar_TimelimitFromStart = CreateConVar("mapchoices_timelimit_fromstart", "0", "0: Start timeleft vote based on time before map changes. 1: Start timeleft vote based on time from map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
-	
-	g_Cvar_RoundVoteStart = CreateConVar("mapchoices_maxrounds_votestart", "2", "Start a vote based on how many rounds have passed. 0 means after final round during bonus time.", FCVAR_PLUGIN, true, 0.0);
-	g_Cvar_RoundFromStart = CreateConVar("mapchoices_maxrounds_fromstart", "0", "0: Start maxrounds vote based on rounds before the map ends.  1: Start maxrounds vote based on rounds from map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
 	
 	// Valve cvars
-	g_Cvar_Timelimit = FindConVar("mp_timelimit");
+	// g_Cvar_Timelimit = FindConVar("mp_timelimit");
 	// g_Cvar_ChatTime = FindConVar("mp_chattime");
 	
 	// These 4 cvars may be overridden by game plugins
@@ -160,10 +151,10 @@ public void OnPluginStart()
 	g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
 	
 	// State change forwards
-	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_MapVoteStarted", ET_Ignore);
-	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_MapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
-	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_NominationAdded", ET_Ignore, Param_String, Param_Cell);
-	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_NominationRemoved", ET_Ignore, Param_String, Param_Cell);
+	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_OnMapVoteStarted", ET_Ignore, Param_Cell);
+	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_OnMapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
+	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_Cell);
+	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_Cell);
 	
 	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
@@ -193,93 +184,6 @@ public void OnMapStart()
 	g_bMapVoteCompleted = false;
 }
 
-public void OnMapEnd()
-{
-	if (g_hTimeLimitVote != null)
-	{
-		KillTimer(g_hTimeLimitVote);
-		g_hTimeLimitVote = null;
-	}
-}
-
-public void OnConfigsExecuted()
-{
-	SetupRoundVote();
-}
-
-void SetupRoundVote()
-{
-	if (g_Cvar_MaxRounds == null || g_Cvar_MaxRounds.IntValue <= 0)
-	{
-		g_VoteStartRound = 0;
-		return;
-	}
-	
-	if (g_Cvar_RoundVoteStart.IntValue == 0)
-	{
-		g_VoteStartRound = g_Cvar_MaxRounds.IntValue;
-		return;
-	}
-	
-	int tempRounds = 0;
-	
-	if (g_Cvar_RoundFromStart.BoolValue)
-	{
-		tempRounds = g_Cvar_RoundVoteStart.IntValue;
-		
-		// They tried to have the vote after maxrounds, reduce the vote to happen one round before maxrounds.
-		g_VoteStartRound = tempRounds > g_Cvar_MaxRounds.IntValue ? g_Cvar_MaxRounds.IntValue - 1 : tempRounds;
-	}
-	else
-	{
-		tempRounds = g_Cvar_MaxRounds.IntValue - g_Cvar_RoundVoteStart.IntValue;
-		
-		g_VoteStartRound = tempRounds <= 0 ? 1 : tempRounds;
-	}
-}
-
-void SetupTimeleftVote()
-{
-	int timelimit;
-
-	if (!GetMapTimeLimit(timelimit) && !g_Cvar_TimelimitFromStart.BoolValue)
-	{
-		// Map doesn't have timelimit and we're not measuring from start
-		return;
-	}
-
-	float timer;
-	if (g_Cvar_TimelimitFromStart.BoolValue)
-	{
-		timer = g_Cvar_TimelimitVoteStart.FloatValue * 60.0;
-		
-		if (timelimit > 0)
-		{
-			timer = timelimit * 60.0 < timer ? timelimit * 60.0 - 60.0 : timer ;
-		}
-	}
-	else if (timelimit > 0)
-	{
-		
-	}
-	
-	
-	//TODO
-}
-
-public void OnMapTimeLeftChanged()
-{
-	int timeleft;
-	if (GetMapTimeLeft(timeleft) && timeleft == 0 && GetClientCount() > 0)
-	{
-		// Time left is less than 0, so start vote
-		StartVote(MapChoicesMapChange_MapEnd);
-	}
-	
-	// TODO Checks to see if timer reset
-	SetupTimeleftVote();
-}
-
 public void OnClientDisconnect(int client)
 {
 	// Clear the client's nominations
@@ -303,15 +207,6 @@ public void OnClientDisconnect(int client)
 		}
 		
 		g_MapNominations[client][0] = '\0';
-	}
-}
-
-public void OnClientDisconnect_Post(int client)
-{
-	if (GetClientCount(true) == 0)
-	{
-		KillTimer(g_hTimeLimitVote);
-		g_hTimeLimitVote = null;
 	}
 }
 
@@ -570,4 +465,107 @@ public int Native_StartVote(Handle plugin, int numParams)
 public int Native_WillChangeAtRoundEnd(Handle plugin, int numParams)
 {
 	return g_bChangeAtRoundEnd;
+}
+
+// MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar)
+public int Native_OverrideConVar(Handle plugin, int numParams)
+{
+	MapChoices_ConVarOverride overrideConVar = GetNativeCell(1);
+	ConVar conVar = GetNativeCell(2);
+	
+	if (conVar == null)
+	{
+		return false;
+	}
+	
+	switch (overrideConVar)
+	{
+		case MapChoicesConVar_BonusTime:
+		{
+			g_Cvar_BonusTime = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_Winlimit:
+		{
+			g_Cvar_Winlimit = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_FragLimit:
+		{
+			g_Cvar_FragLimit = conVar;
+			return true;
+		}
+		
+		case MapChoicesConVar_MaxRounds:
+		{
+			g_Cvar_MaxRounds = conVar;
+			return true;
+		}
+	}
+	
+	return false;
+}
+
+// native void MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
+public int Native_ResetConVar(Handle plugin, int numParams)
+{
+	MapChoices_ConVarOverride overrideConVar = GetNativeCell(1);
+	
+	switch(overrideConVar)
+	{
+		case MapChoicesConVar_BonusTime:
+		{
+			g_Cvar_BonusTime = FindConVar("mp_bonusroundtime");
+		}
+		
+		case MapChoicesConVar_Winlimit:
+		{
+			g_Cvar_Winlimit = FindConVar("mp_winlimit");
+		}
+		
+		case MapChoicesConVar_FragLimit:
+		{
+			g_Cvar_FragLimit = FindConVar("mp_fraglimit");
+		}
+		
+		case MapChoicesConVar_MaxRounds:
+		{
+			g_Cvar_MaxRounds = FindConVar("mp_maxrounds");
+		}
+	}
+}
+
+// native ConVar MapChoices_GetConVarOverride(MapChoices_ConVarOverride overrideConVar);
+public int Native_GetConVarOverride(Handle plugin, int numParams)
+{
+	MapChoices_ConVarOverride overrideConVar = GetNativeCell(1);
+	
+	ConVar out;
+	
+	switch(overrideConVar)
+	{
+		case MapChoicesConVar_BonusTime:
+		{
+			out = g_Cvar_BonusTime;
+		}
+		
+		case MapChoicesConVar_Winlimit:
+		{
+			out = g_Cvar_Winlimit;
+		}
+		
+		case MapChoicesConVar_FragLimit:
+		{
+			out = g_Cvar_FragLimit;
+		}
+		
+		case MapChoicesConVar_MaxRounds:
+		{
+			out = g_Cvar_MaxRounds;
+		}
+	}
+	
+	return view_as<int>(out);
 }

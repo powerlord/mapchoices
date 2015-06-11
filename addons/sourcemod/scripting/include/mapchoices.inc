@@ -84,7 +84,15 @@ enum MapChoices_GameFlags
 	MapChoicesGame_AvoidHintbox = (1<<3),		/** Game text should not be displayed in hintboxes: HL2:DM */
 }
 
-// 1.6-style enum because it's an enum-struct
+enum MapChoices_ConVarOverride
+{
+	MapChoicesConVar_BonusTime,
+	MapChoicesConVar_Winlimit,
+	MapChoicesConVar_FragLimit,
+	MapChoicesConVar_MaxRounds,
+}
+
+// SM 1.6-style enum because it's an enum-struct
 // Used to store data about a map.
 // Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
 enum mapdata_t
@@ -274,8 +282,11 @@ native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] modu
 
 /**
  * A map vote started.
+ * 
+ * @param runoff	True if this is a runoff vote, false otherwise
+ * @noreturn
  */
-forward void MapChoices_OnMapVoteStarted();
+forward void MapChoices_OnMapVoteStarted(bool runoff);
 
 /**
  * A map vote just ended and a map won.
@@ -419,6 +430,40 @@ native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
 
 // For subplugins
 native MapChoices_GameFlags MapChoices_GetGameFlags();
+
+/**
+ * Override one of the plugins cvars
+ * 
+ * Used by game plugins to alter that ConVars used
+ * 
+ * @param overrideConVar	Which conVar are we overriding?
+ * @param conVar			Handle of the new ConVar to use
+ * 
+ * @return True if it was overridden, false if not.
+ * 
+ * NOTE: ConVars are owned by the SM core, not by individual plugins.  They can not be closed or cloned.
+ */
+native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar);
+
+/**
+ * Reset a ConVar back to its default value.
+ * 
+ * Used by game plugins that exit
+ * 
+ * @param conVar		Which conVar are we resetting?
+ * 
+ * NOTE: This function isn't really necessary but is included for completenesss.
+ */
+native void MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
+
+/**
+ * Retrieve a ConVar Handle from the Mapchoices core
+ * 
+ * @param overrideConVar	Which convar are we retrieving
+ * 
+ * @return ConVar Handle of the convar.
+ */
+native ConVar MapChoices_GetConVarOverride(MapChoices_ConVarOverride overrideConVar);
 
 // --------------------------------------------------------------------------------
 // Standard plugin stuff

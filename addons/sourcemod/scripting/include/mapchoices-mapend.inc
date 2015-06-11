@@ -38,19 +38,11 @@
 
 // Plugin 1.0 series
 
-enum MapChoices_ConVarOverride
-{
-	MapChoicesConVar_BonusTime,
-	MapChoicesConVar_Winlimit,
-	MapChoicesConVar_FragLimit,
-	MapChoicesConVar_MaxRounds,
-}
+native bool MapChoices_MapEnd_EndOfMapVoteEnabled();
 
-native bool MapChoices_EndOfMapVoteEnabled();
+native bool MapChoices_MapEnd_HasEndOfMapVoteFinished();
 
-native bool MapChoices_HasEndOfMapVoteFinished();
-
-native int MapChoices_GetStartRounds();
+native int MapChoices_MapEnd_GetStartRounds();
 
 /**
  * Called by Game plugins to swap scores.
@@ -59,7 +51,7 @@ native int MapChoices_GetStartRounds();
  * @param team1	First team to swap.
  * @param team2	Second team to swap.
  */
-native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, MapChoices_Team team2=MapChoices_Team2);
+native void MapChoices_MapEnd_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, MapChoices_Team team2=MapChoices_Team2);
 
 /**
  * Process round end logic.
@@ -69,30 +61,7 @@ native void MapChoices_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, Ma
  * @param winner		Which team won
  * @param score		What that team's score is.  If -1, use internal scores
  */
-native void MapChoices_ProcessRoundEnd(MapChoices_Team winner, int score=-1);
-
-/**
- * Override one of the plugins cvars
- * 
- * Used by game plugins to alter that ConVars used
- * 
- * @param conVar		Which conVar are we overriding?
- * @param name		name of the new ConVar to use
- * 
- * NOTE: ConVars are owned by core, not by individual plugins.  They can not be closed or cloned.
- */
-native bool MapChoices_OverrideConVar(MapChoices_ConVarOverride overrideConVar, ConVar conVar);
-
-/**
- * Reset a ConVar back to its default value.
- * 
- * Used by game plugins that exit
- * 
- * @param conVar		Which conVar are we resetting?
- * 
- * NOTE: This function isn't really necessary but is included for completenesss.
- */
-native void MapChoices_ResetConVar(MapChoices_ConVarOverride overrideConVar);
+native void MapChoices_MapEnd_ProcessRoundEnd(MapChoices_Team winner, int score=-1);
 
 // --------------------------------------------------------------------------------
 // Standard plugin stuff
@@ -111,12 +80,12 @@ public SharedPlugin __pl_mapchoices_mapend =
 #if !defined REQUIRE_PLUGIN
 public void __pl_mapchoices_mapend_SetNTVOptional()
 {
-	MarkNativeAsOptional("MapChoices_EndOfMapVoteEnabled");
-	MarkNativeAsOptional("MapChoices_HasEndOfMapVoteFinished");
-	MarkNativeAsOptional("MapChoices_GetStartRounds");
-	MarkNativeAsOptional("MapChoices_SwapTeamScores");
-	MarkNativeAsOptional("MapChoices_ProcessRoundEnd");
-	MarkNativeAsOptional("MapChoices_OverrideConVar");
-	MarkNativeAsOptional("MapChoices_ResetConVar");
+	MarkNativeAsOptional("MapChoices_MapEnd_EndOfMapVoteEnabled");
+	MarkNativeAsOptional("MapChoices_MapEnd_HasEndOfMapVoteFinished");
+	MarkNativeAsOptional("MapChoices_MapEnd_GetStartRounds");
+	MarkNativeAsOptional("MapChoices_MapEnd_SwapTeamScores");
+	MarkNativeAsOptional("MapChoices_MapEnd_ProcessRoundEnd");
+	MarkNativeAsOptional("MapChoices_MapEnd_OverrideConVar");
+	MarkNativeAsOptional("MapChoices_MapEnd_ResetConVar");
 }
 #endif
