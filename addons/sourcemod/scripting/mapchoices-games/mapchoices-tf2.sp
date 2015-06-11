@@ -117,6 +117,8 @@ public void OnAllPluginsLoaded()
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
 	MapChoices_AddChangeMapHandler(TF2_ChangeMap);
 	
+	MapChoices_AddMapNameHandler(TF2_MapName);
+	
 	// Override round end mechanics
 	MapEndLoad();
 }
@@ -125,7 +127,7 @@ public void OnLibraryAdded(const char[] name)
 {
 	if (StrEqual(name, "mapchoices-mapend"))
 	{
-		
+		g_bMapEndRunning = true;
 	}
 }
 
@@ -133,7 +135,7 @@ public void OnLibraryRemoved(const char[] name)
 {
 	if (StrEqual(name, "mapchoices-mapend"))
 	{
-		
+		g_bMapEndRunning = false;
 	}
 }
 
@@ -166,6 +168,7 @@ public void OnConfigsExecuted()
 	g_Cvar_VoteNextLevel.BoolValue = false;
 }
 
+// TODO Fix this to make calls to the mapend plugin
 public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroadcast)
 {
 	if (!IsMvM() && MapChoices_WillChangeAtRoundEnd())
@@ -175,7 +178,7 @@ public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroa
 		TF2_ChangeMap(map, true);
 	}
 	
-	if (IsMvM() || !g_bMapEndRunning || !MapChoices_MapEnd_EndOfMapVoteEnabled() || MapChoices_MapEnd_HasEndOfMapVoteFinished())
+	if (IsMvM() || !g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
 	{
 		return;
 	}
@@ -232,8 +235,14 @@ void ValidateObjectiveEntity()
 	}
 }
 
+// TODO Fix this to make calls to the mapend plugin
 public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast)
 {
+	if (!g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
+	{
+		return;
+	}
+	
 	int winner = event.GetInt("winning_team");
 	
 	if (winner == view_as<int>(MapChoices_Team1))
@@ -253,6 +262,7 @@ public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast
 	}
 }
 
+// TODO Fix this to make calls to the mapend plugin
 void CheckMaxRounds(int roundCount)
 {
 	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_MapEnd_GetStartRounds())
@@ -261,6 +271,7 @@ void CheckMaxRounds(int roundCount)
 	}
 }
 
+// TODO Fix this to make calls to the mapend plugin
 void CheckWinLimit(int winnerScore, int loserScore)
 {
 	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_MapEnd_GetStartRounds()))
@@ -362,4 +373,24 @@ void GameEnd()
 bool IsMvM()
 {
 	return view_as<bool>(GameRules_GetProp("m_bPlayingMannVsMachine"));
+}
+
+// Process TF2 workshop map names
+public void TF2_MapName(const char[] map, char[] realMap, int realMapLength)
+{
+	char tempMap[PLATFORM_MAX_PATH];
+	
+	strcopy(tempMap, sizeof(tempMap), map);
+	
+	int dotPosition = 0;
+	// Check if this is a workshop map
+	if (strncmp("workshop", map, 8) == 0 && (map[8] == '/' || map[8] == '\\') && (dotPosition = StrContains(map, ".ugc")) > -1)
+	{
+		int size = strlen(map) - 9 - dotPosition;
+		strcopy(realMap, size <= realMapLength ? size : realMapLength, map[9]);
+	}
+	else
+	{
+		strcopy(realMap, realMapLength, map);
+	}
 }

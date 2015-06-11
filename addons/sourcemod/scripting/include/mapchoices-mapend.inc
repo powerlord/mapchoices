@@ -38,9 +38,9 @@
 
 // Plugin 1.0 series
 
-native bool MapChoices_MapEnd_EndOfMapVoteEnabled();
+native bool MapChoices_MapEnd_VoteEnabled();
 
-native bool MapChoices_MapEnd_HasEndOfMapVoteFinished();
+native bool MapChoices_MapEnd_HasVoteFinished();
 
 native int MapChoices_MapEnd_GetStartRounds();
 

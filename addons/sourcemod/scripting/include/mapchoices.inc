@@ -268,6 +268,8 @@ native void MapChoices_GetNominatedMapList(ArrayList maparray, ArrayList ownerar
  */
 native bool MapChoices_CanStartVote();
 
+typedef MapChoices_VoteFinished = function void ();
+
 /**
  * Start a map vote.
  * 
@@ -275,7 +277,8 @@ native bool MapChoices_CanStartVote();
  * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
  * @param mapGroup	Which mapgroup should we use?
  */
-native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices");
+native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices", MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
+
 
 // --------------------------------------------------------------------------------
 // Forwards used by MapChoices subplugins for telling when votes start and finish
@@ -409,27 +412,19 @@ native bool MapChoices_WillChangeAtRoundEnd();
  */
 typedef MapChoices_ChangeMapForward = function Action (const char[] map, bool isRoundEnd);
 
-typedef MapChoices_WinLimitForward = function Action (int team, int score);
-
-typedef MapChoices_RoundLimitForward = function Action (int rounds);
-
 native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
-
-native bool MapChoices_AddWinlimitCheck(MapChoices_WinLimitForward winLimitHandler);
-native bool MapChoices_RemoveWinlimitCheck(MapChoices_WinLimitForward winLimitHandler);
-
-native bool MapChoices_AddRoundLimitCheck(MapChoices_RoundLimitForward roundLimitHandler);
-native bool MapChoices_RemoveRoundLimitCheck(MapChoices_RoundLimitForward roundLimitHandler);
-
-//native void MapChoices_AddRoundEnd(MapChoices_EndRound roundEndHandler);
-//native void MapChoices_RemoveRoundEnd(MapChoices_EndRound roundEndHandler);
 
 native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
 native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
 
 // For subplugins
 native MapChoices_GameFlags MapChoices_GetGameFlags();
+
+typedef MapChoices_MapNameForward = function void(const char[] map, char[] realMap, int realMapLength);
+
+native bool MapChoices_AddMapNameHandler(MapChoices_MapNameForward mapNameHandler);
+native bool MapChoices_RemoveMapNameHandler(MapChoices_MapNameForward mapNameHandler);
 
 /**
  * Override one of the plugins cvars

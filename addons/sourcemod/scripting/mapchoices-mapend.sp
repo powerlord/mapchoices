@@ -67,6 +67,9 @@ ConVar g_Cvar_RoundFromStart;
 int g_VoteStartRound = 0;
 int g_VoteStartFrag = 0;
 
+bool g_bVoteStarted = false;
+bool g_bVoteFinished = false;
+
 Handle g_hTimeLimitVote;
 
 public Plugin myinfo = {
@@ -80,6 +83,9 @@ public Plugin myinfo = {
 // Native Support
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
+	CreateNative("MapChoices_MapEnd_VoteEnabled", Native_EndOfMapVoteEnabled);
+	CreateNative("MapChoices_MapEnd_HasVoteFinished", Native_HasEndOfMapVoteFinished);
+	CreateNative("MapChoices_MapEnd_GetStartRounds", Native_GetStartRounds);
 	CreateNative("MapChoices_MapEnd_ProcessRoundEnd", Native_ProcessRoundEnd);
 	CreateNative("MapChoices_MapEnd_SwapTeamScores", Native_SwapTeamScores);
 	
@@ -121,6 +127,9 @@ public void OnMapStart()
 	{
 		g_WinCount[i] = 0;
 	}
+	
+	g_bVoteStarted = false;
+	g_bVoteFinished = false;
 }
 
 public void OnMapEnd()
@@ -215,6 +224,12 @@ void SetupFragVote()
 
 void SetupTimeleftVote()
 {
+	if (g_hTimeLimitVote != null)
+	{
+		CloseHandle(g_hTimeLimitVote);
+		g_hTimeLimitVote = null;
+	}
+	
 	int timelimit;
 
 	if (!GetMapTimeLimit(timelimit) && !g_Cvar_TimelimitFromStart.BoolValue)
@@ -250,16 +265,16 @@ void SetupTimeleftVote()
 
 public Action Timer_StartVote(Handle timer)
 {
-	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+	StartVote();
 }
 
 public void OnMapTimeLeftChanged()
 {
 	int timeleft;
-	if (GetMapTimeLeft(timeleft) && timeleft == 0 && GetClientCount() > 0)
+	if (GetMapTimeLeft(timeleft) && timeleft <= 0 && GetClientCount() > 0)
 	{
 		// Time left is less than 0, so start vote
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+		StartVote();
 	}
 	
 	// TODO Checks to see if timer reset
@@ -268,7 +283,7 @@ public void OnMapTimeLeftChanged()
 
 public void OnClientDisconnect_Post(int client)
 {
-	if (GetClientCount(true) == 0)
+	if (GetClientCount() == 0)
 	{
 		KillTimer(g_hTimeLimitVote);
 		g_hTimeLimitVote = null;
@@ -316,13 +331,13 @@ public void Event_PlayerDeath(Event event, const char[] name, bool dontBroadcast
 	
 	if (GetClientFrags(client) >= g_VoteStartFrag)
 	{
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");		
+		StartVote();
 	}
 }
 
-// May move back to core
 void ProcessRoundEnd(MapChoices_Team winner, int score=-1)
 {
+	// If core is changing maps, don't run our logic
 	if (MapChoices_WillChangeAtRoundEnd())
 	{
 		return;
@@ -342,16 +357,13 @@ void ProcessRoundEnd(MapChoices_Team winner, int score=-1)
 	{
 		CheckWinLimit(g_WinCount[winner]);
 	}
-	
-	//TODO finish this logic
 }
 
 void CheckMaxRounds(int roundCount)
 {
 	if (roundCount >= g_VoteStartRound)
 	{
-		// TODO Feels like something is missing here
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+		StartVote();
 	}
 }
 
@@ -363,9 +375,25 @@ void CheckWinLimit(int winner_score)
 		int winlimit = conWinLimit.IntValue;
 		if (winlimit > 0 && winner_score >= (winlimit - g_VoteStartRound))
 		{
-			MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+			StartVote();
 		}
 	}
+}
+
+void StartVote()
+{
+	if (g_bVoteStarted || g_bVoteFinished)
+	{
+		return;
+	}
+	
+	g_bVoteStarted = true;
+	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend", .finishedFunction=OnVoteFinished);
+}
+
+public void OnVoteFinished()
+{
+	g_bVoteFinished = true;
 }
 
 // Natives
@@ -389,4 +417,22 @@ public int Native_SwapTeamScores(Handle plugin, int numParams)
 	int temp = g_WinCount[team1];
 	g_WinCount[team1] = g_WinCount[team2];
 	g_WinCount[team2] = temp;
+}
+
+// native bool MapChoices_MapEnd_EndOfMapVoteEnabled();
+public int Native_EndOfMapVoteEnabled(Handle plugin, int numParams)
+{
+	return g_Cvar_Enabled.BoolValue;
+}
+
+// native bool MapChoices_MapEnd_HasEndOfMapVoteFinished();
+public int Native_HasEndOfMapVoteFinished(Handle plugin, int numParams)
+{
+	return g_bVoteFinished;
+}
+
+// native int MapChoices_MapEnd_GetStartRounds();
+public int Native_GetStartRounds(Handle plugin, int numParams)
+{
+	return g_VoteStartRound;
 }
