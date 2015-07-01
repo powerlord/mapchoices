@@ -256,7 +256,7 @@ bool Core_IsVoteInProgress()
 	Action result = Plugin_Continue;
 	
 	Call_StartForward(g_Forward_HandlerIsVoteInProgress);
-	Call_PushCellRef(result);
+	Call_PushCellRef(inProgress);
 	Call_Finish(result);
 	
 	if (result >= Plugin_Handled)
