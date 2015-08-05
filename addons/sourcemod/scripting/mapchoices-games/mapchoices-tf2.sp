@@ -85,7 +85,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
-	CreateConVar("mapchoices_tf2_version", VERSION, "MapChoices TF2 plugin", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
+	CreateConVar("mapchoices_tf2_version", VERSION, "MapChoices TF2 plugin", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	
 	g_Cvar_Winlimit = FindConVar("mp_winlimit");
 	g_Cvar_Maxrounds = FindConVar("mp_maxrounds");
@@ -116,9 +116,7 @@ public void OnAllPluginsLoaded()
 	
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
 	MapChoices_AddChangeMapHandler(TF2_ChangeMap);
-	
-	MapChoices_AddMapNameHandler(TF2_MapName);
-	
+
 	// Override round end mechanics
 	MapEndLoad();
 }
@@ -373,24 +371,4 @@ void GameEnd()
 bool IsMvM()
 {
 	return view_as<bool>(GameRules_GetProp("m_bPlayingMannVsMachine"));
-}
-
-// Process TF2 workshop map names
-public void TF2_MapName(const char[] map, char[] realMap, int realMapLength)
-{
-	char tempMap[PLATFORM_MAX_PATH];
-	
-	strcopy(tempMap, sizeof(tempMap), map);
-	
-	int dotPosition = 0;
-	// Check if this is a workshop map
-	if (strncmp("workshop", map, 8) == 0 && (map[8] == '/' || map[8] == '\\') && (dotPosition = StrContains(map, ".ugc")) > -1)
-	{
-		int size = strlen(map) - 9 - dotPosition;
-		strcopy(realMap, size <= realMapLength ? size : realMapLength, map[9]);
-	}
-	else
-	{
-		strcopy(realMap, realMapLength, map);
-	}
 }

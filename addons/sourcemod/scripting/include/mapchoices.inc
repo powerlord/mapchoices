@@ -423,9 +423,6 @@ native MapChoices_GameFlags MapChoices_GetGameFlags();
 
 typedef MapChoices_MapNameForward = function void(const char[] map, char[] realMap, int realMapLength);
 
-native bool MapChoices_AddMapNameHandler(MapChoices_MapNameForward mapNameHandler);
-native bool MapChoices_RemoveMapNameHandler(MapChoices_MapNameForward mapNameHandler);
-
 /**
  * Override one of the plugins cvars
  * 
