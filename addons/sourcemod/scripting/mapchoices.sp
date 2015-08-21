@@ -325,8 +325,8 @@ void ChangeMap(bool isRoundEnd)
 	GetNextMap(map, sizeof(map));
 	
 	Call_StartForward(g_Forward_ChangeMap);
-	Call_PushCell(isRoundEnd);
 	Call_PushString(map);
+	Call_PushCell(isRoundEnd);
 	Call_Finish(result);
 	
 	if (result < Plugin_Handled)
