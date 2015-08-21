@@ -66,9 +66,11 @@ int g_TotalRounds;
 
 int g_ObjectiveEnt = INVALID_ENT_REFERENCE;
 
-int g_GameType = GameType_Unknown;
+//int g_GameType = GameType_Unknown;
 
 bool g_bOldSuddenDeath;
+
+bool g_bMvM = false;
 
 bool g_bMapEndRunning = false;
 
@@ -107,6 +109,7 @@ public void OnPluginStart()
 
 public void OnMapStart()
 {
+	g_bMvM = false;
 	g_TotalRounds = 0;
 }
 
@@ -116,9 +119,6 @@ public void OnAllPluginsLoaded()
 	
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
 	MapChoices_AddChangeMapHandler(TF2_ChangeMap);
-
-	// Override round end mechanics
-	MapEndLoad();
 }
 
 public void OnLibraryAdded(const char[] name)
@@ -138,45 +138,32 @@ public void OnLibraryRemoved(const char[] name)
 }
 
 
-void MapEndLoad()
-{
-	if (g_bMapEndRunning)
-	{
-	}
-}
-
-void MapEndUnload()
-{
-	if (g_bMapEndRunning)
-	{
-		MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
-		MapChoices_RemoveChangeMapHandler(TF2_ChangeMap);
-	}
-}
-
 public void OnPluginEnd()
 {
-	MapEndUnload();
+	MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
+	MapChoices_RemoveChangeMapHandler(TF2_ChangeMap);
 }
 
 public void OnConfigsExecuted()
 {
-	g_GameType = GameRules_GetProp("m_nGameType");
+	//g_GameType = GameRules_GetProp("m_nGameType");
 	
+	g_bMvM = view_as<bool>(GameRules_GetProp("m_bPlayingMannVsMachine"));
+
 	g_Cvar_VoteNextLevel.BoolValue = false;
 }
 
 // TODO Fix this to make calls to the mapend plugin
 public void Event_TeamPlayWinPanel(Event event, const char[] name, bool dontBroadcast)
 {
-	if (!IsMvM() && MapChoices_WillChangeAtRoundEnd())
+	if (!g_bMvM && MapChoices_WillChangeAtRoundEnd())
 	{
 		char map[PLATFORM_MAX_PATH];
 		GetNextMap(map, sizeof(map));
 		TF2_ChangeMap(map, true);
 	}
 	
-	if (IsMvM() || !g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
+	if (g_bMvM || !g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
 	{
 		return;
 	}
@@ -296,6 +283,7 @@ public Action TF2_ChangeMap(const char[] map, bool isRoundEnd)
 	DataPack data;
 	// Subtract 0.2 seconds because SourceMod timer resolution is only 0.1 seconds.
 	CreateDataTimer(g_Cvar_BonusTime.FloatValue - 0.2, Timer_GameEnd, data, TIMER_FLAG_NO_MAPCHANGE);
+	data.WriteString(map);
 	data.WriteCell(isRoundEnd);
 	data.Reset();
 	
@@ -304,12 +292,15 @@ public Action TF2_ChangeMap(const char[] map, bool isRoundEnd)
 
 public Action Timer_GameEnd(Handle timer, DataPack data)
 {
+	char map[PLATFORM_MAX_PATH];
+	data.ReadString(map, sizeof(map));
+	
 	bool isRoundEnd = data.ReadCell();
-	if (isRoundEnd)
+	if (!isRoundEnd)
 	{
 		g_Cvar_SuddenDeath.BoolValue = g_bOldSuddenDeath;
 	}
-	GameEnd();
+	GameEnd(map);
 }
 
 // Note: This is the TF2-specific version
@@ -334,13 +325,15 @@ void RoundEnd()
 	}
 }
 
-void GameEnd()
+void GameEnd(const char[] map)
 {
-	int entity = -1;
+	int entity = FindEntityByClassname(-1, "game_end");
 	
-	entity = FindEntityByClassname(-1, "game_end");
-	
-	if (entity == -1)
+	if (entity != -1)
+	{
+		AcceptEntityInput(entity, "EndGame");
+	}
+	else
 	{
 		entity = CreateEntityByName("game_end");
 		if (entity > -1)
@@ -350,25 +343,27 @@ void GameEnd()
 				AcceptEntityInput(entity, "EndGame");
 				return;
 			}
+			else
+			{
+				ForceChangeLevel(map, "Map Vote");
+	}
+		}
+		else
+		{
+			ForceChangeLevel(map, "Map Vote");
 		}
 	}
 	
-	//Event gameEndEvent = CreateEvent("game_end");
-	//gameEndEvent.SetInt("winner", view_as<int>(MapChoices_TeamUnassigned)); // This won't work for HL2:DM, which expects a player for non-team games
-	//gameEndEvent.Fire();
-	
-//	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, _, TIMER_FLAG_NO_MAPCHANGE);
+//	DataPack data;
+//	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, data, TIMER_FLAG_NO_MAPCHANGE);
+//	data.WriteString(map);
+//	data.Reset();
 }
 
-//public Action Timer_End(Handle timer)
+//public Action Timer_End(Handle timer, DataPack data)
 //{
 //	char map[PLATFORM_MAX_PATH];
-//	GetNextMap(map, sizeof(map));
+//	data.ReadString(map, sizeof(map));
 //	
 //	ForceChangeLevel(map, "Map Vote");
 //}
-
-bool IsMvM()
-{
-	return view_as<bool>(GameRules_GetProp("m_bPlayingMannVsMachine"));
-}

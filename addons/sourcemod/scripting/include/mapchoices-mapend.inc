@@ -80,8 +80,8 @@ public SharedPlugin __pl_mapchoices_mapend =
 #if !defined REQUIRE_PLUGIN
 public void __pl_mapchoices_mapend_SetNTVOptional()
 {
-	MarkNativeAsOptional("MapChoices_MapEnd_EndOfMapVoteEnabled");
-	MarkNativeAsOptional("MapChoices_MapEnd_HasEndOfMapVoteFinished");
+	MarkNativeAsOptional("MapChoices_MapEnd_VoteEnabled");
+	MarkNativeAsOptional("MapChoices_MapEnd_HasVoteFinished");
 	MarkNativeAsOptional("MapChoices_MapEnd_GetStartRounds");
 	MarkNativeAsOptional("MapChoices_MapEnd_SwapTeamScores");
 	MarkNativeAsOptional("MapChoices_MapEnd_ProcessRoundEnd");

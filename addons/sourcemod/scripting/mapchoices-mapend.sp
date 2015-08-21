@@ -33,9 +33,8 @@
  */
 #include <sourcemod>
 
-#include "include/mapchoices" // Include our own file to gain access to enums and the like
+#include "include/mapchoices" // Include our own parent's file to make native calls against it
 #include "include/mapchoices-mapend" // Include our own file to gain access to enums and the like
-#include "include/map_workshop_functions.inc"
 #include <sdktools>
 
 #pragma semicolon 1
@@ -97,18 +96,18 @@ public void OnPluginStart()
 	LoadTranslations("common.phrases");
 	LoadTranslations("mapchoices.phrases");
 	
-	CreateConVar("mapchoices_mapend_version", VERSION, "MapChoices Map End Vote version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
-	g_Cvar_Enabled = CreateConVar("mapchoices_mapend_enable", "1", "Enable MapChoices End Map Vote?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
+	CreateConVar("mapchoices_mapend_version", VERSION, "MapChoices Map End Vote version", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
+	g_Cvar_Enabled = CreateConVar("mapchoices_mapend_enable", "1", "Enable MapChoices End Map Vote?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	
 	// Core map vote starting stuff
-	g_Cvar_FragVoteStart = CreateConVar("mapchoices_frag_votestart", "5", "If a person is this close to the frag limit, start a vote.", FCVAR_PLUGIN, true, 1.0);
-	g_Cvar_FragFromStart = CreateConVar("mapchoices_frag_fromstart", "0", "0: Start frags vote based on frags until frag limit. 1: Start frags vote on frags since map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	g_Cvar_FragVoteStart = CreateConVar("mapchoices_frag_votestart", "5", "If a person is this close to the frag limit, start a vote.", _, true, 1.0);
+	g_Cvar_FragFromStart = CreateConVar("mapchoices_frag_fromstart", "0", "0: Start frags vote based on frags until frag limit. 1: Start frags vote on frags since map start.", _, true, 0.0, true, 1.0);
 	
-	g_Cvar_TimelimitVoteStart = CreateConVar("mapchoices_timelimit_votestart", "6", "Start a vote based on the timelimit. Note: TF2 will end if less than 5 minutes is left on the clock.", FCVAR_PLUGIN, true, 0.0);
-	g_Cvar_TimelimitFromStart = CreateConVar("mapchoices_timelimit_fromstart", "0", "0: Start timeleft vote based on time before map changes. 1: Start timeleft vote based on time from map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	g_Cvar_TimelimitVoteStart = CreateConVar("mapchoices_timelimit_votestart", "6", "Start a vote based on the timelimit. Note: TF2 will end if less than 5 minutes is left on the clock.", _, true, 0.0);
+	g_Cvar_TimelimitFromStart = CreateConVar("mapchoices_timelimit_fromstart", "0", "0: Start timeleft vote based on time before map changes. 1: Start timeleft vote based on time from map start.", _, true, 0.0, true, 1.0);
 	
-	g_Cvar_RoundVoteStart = CreateConVar("mapchoices_maxrounds_votestart", "2", "Start a vote based on how many rounds have passed. 0 means after final round during bonus time.", FCVAR_PLUGIN, true, 0.0);
-	g_Cvar_RoundFromStart = CreateConVar("mapchoices_maxrounds_fromstart", "0", "0: Start maxrounds vote based on rounds before the map ends.  1: Start maxrounds vote based on rounds from map start.", FCVAR_PLUGIN, true, 0.0, true, 1.0);
+	g_Cvar_RoundVoteStart = CreateConVar("mapchoices_maxrounds_votestart", "2", "Start a vote based on how many rounds have passed. 0 means after final round during bonus time.", _, true, 0.0);
+	g_Cvar_RoundFromStart = CreateConVar("mapchoices_maxrounds_fromstart", "0", "0: Start maxrounds vote based on rounds before the map ends.  1: Start maxrounds vote based on rounds from map start.", _, true, 0.0, true, 1.0);
 	
 	// Valve cvars
 	// g_Cvar_Timelimit = FindConVar("mp_timelimit");
@@ -226,8 +225,7 @@ void SetupTimeleftVote()
 {
 	if (g_hTimeLimitVote != null)
 	{
-		CloseHandle(g_hTimeLimitVote);
-		g_hTimeLimitVote = null;
+		delete g_hTimeLimitVote;
 	}
 	
 	int timelimit;

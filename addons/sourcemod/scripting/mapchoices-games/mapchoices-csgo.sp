@@ -32,7 +32,11 @@
  */
 #include <sourcemod>
 #include <sdktools>
-#include "../include/mapchoices" // Include our own file to gain access to enums and the like
+#include <cstrike>
+#include "../include/mapchoices"
+
+#undef REQUIRE_PLUGIN
+#include "../include/mapchoices-mapend"
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -73,6 +77,8 @@ enum
 	GunGameMode_DeathMatch	= 2,
 }
 
+bool g_bMapEndRunning = false;
+
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
 	if (GetEngineVersion() != Engine_CSGO)
@@ -86,7 +92,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 
 public void OnPluginStart()
 {
-	CreateConVar("mapchoices_csgo_version", VERSION, "MapChoices CS:GO plugin", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
+	CreateConVar("mapchoices_csgo_version", VERSION, "MapChoices CS:GO plugin", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	
 	g_Cvar_Winlimit = FindConVar("mp_winlimit");
 	g_Cvar_Maxrounds = FindConVar("mp_maxrounds");
@@ -111,14 +117,36 @@ public void OnMapStart()
 
 public void OnAllPluginsLoaded()
 {
+	g_bMapEndRunning = LibraryExists("mapchoices-mapend");
+
 	// Override round end mechanics
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
-	MapChoices_OverrideConVar();
+	MapChoices_OverrideConVar(MapChoicesConVar_BonusTime, g_Cvar_Bonusroundtime);
+	
+	MapChoices_AddChangeMapHandler(CSGO_ChangeMap);
+}
+
+public void OnLibraryAdded(const char[] name)
+{
+	if (StrEqual(name, "mapchoices-mapend"))
+	{
+		g_bMapEndRunning = true;
+	}
+}
+
+public void OnLibraryRemoved(const char[] name)
+{
+	if (StrEqual(name, "mapchoices-mapend"))
+	{
+		g_bMapEndRunning = false;
+	}
 }
 
 public void OnPluginEnd()
 {
 	MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
+	MapChoices_RemoveChangeMapHandler(CSGO_ChangeMap);	
+	MapChoices_ResetConVar(MapChoicesConVar_BonusTime);
 }
 
 public void OnConfigsExecuted()
@@ -154,19 +182,26 @@ public void Event_PhaseEnd(Event event, const char[] name, bool dontBroadcast)
 	}
 
 	/* No intermission yet, so this must be half time. Swap the score counters. */
-	MapChoices_SwapTeamScores();
+	MapChoices_MapEnd_SwapTeamScores();
 }
 
 public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 {
-	if (g_bArmsRace)
+	if (MapChoices_WillChangeAtRoundEnd())
+	{
+		char map[PLATFORM_MAX_PATH];
+		GetNextMap(map, sizeof(map));
+		CSGO_ChangeMap(map, true);
+	}
+	
+	if (g_bArmsRace || !g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
 	{
 		return;
 	}
 	
 	int winner = winner = event.GetInt("winner");
 	
-	if (winner < 2 || !MapChoices_EndOfMapVoteEnabled())
+	if (winner < 2 || !MapChoices_MapEnd_VoteEnabled())
 	{
 		return;
 	}
@@ -186,21 +221,7 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 
 void CheckMaxRounds(int roundCount)
 {
-}
-
-void CheckWinLimit(int winner_score)
-{
-	if (g_Cvar_Winlimit)
-	{
-		int winlimit = g_Cvar_Winlimit.IntValue;
-		if (winlimit)
-		{			
-			if (winner_score >= (winlimit - MapChoices_GetStartRounds()))
-			{
-				MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
-			}
-		}
-	}
+	// TODO MaxRounds logic
 	
 	//CS:GO Clinch support
 	if (g_Cvar_MatchClinch && g_Cvar_Maxrounds)
@@ -212,7 +233,23 @@ void CheckWinLimit(int winner_score)
 			
 			if(winner_score == winlimit - 1)
 			{
-				MapChoices_StartVote(MapChoicesMapChange_MapEnd, null);
+				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-csgo");
+			}
+		}
+	}
+	
+}
+
+void CheckWinLimit(int winner_score)
+{
+	if (g_Cvar_Winlimit)
+	{
+		int winlimit = g_Cvar_Winlimit.IntValue;
+		if (winlimit)
+		{			
+			if (winner_score >= (winlimit - MapChoices_MapEnd_GetStartRounds()))
+			{
+				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-csgo");
 			}
 		}
 	}
@@ -221,30 +258,33 @@ void CheckWinLimit(int winner_score)
 
 public Action CSGO_ChangeMap(const char[] map, bool isRoundEnd)
 {
-	if (isRoundEnd)
+	if (!isRoundEnd)
 	{
-		float interval = g_Cvar_Bonusroundtime.FloatValue - 0.2;
-		DataPack data;
-		CreateDataTimer(interval, Timer_ChangeMap, data, TIMER_FLAG_NO_MAPCHANGE);
-		data.WriteString(map);
-		data.Reset();
+		RoundEnd();
 	}
-	else
-	{
-		ChangeMap(map);
-	}
+	
+	DataPack data;
+	CreateDataTimer(g_Cvar_Bonusroundtime.FloatValue - 0.2, Timer_GameEnd, data, TIMER_FLAG_NO_MAPCHANGE);
+	data.WriteString(map);
+	data.Reset();
 	
 	return Plugin_Handled;
 }
 
-public Action Timer_ChangeMap(Handle timer, DataPack data)
+public Action Timer_GameEnd(Handle timer, DataPack data)
 {
 	char map[PLATFORM_MAX_PATH];
 	data.ReadString(map, sizeof(map));
-	ChangeMap(map);
+	GameEnd(map);
 }
 
-void ChangeMap(const char[] map)
+// Note: The is the CSS/CSGO-specific version
+void RoundEnd()
+{
+	CS_TerminateRound(0.0, CSRoundEnd_Draw, true);
+}
+
+void GameEnd(const char[] map)
 {
 	int entity = FindEntityByClassname(-1, "game_end");
 	
@@ -254,11 +294,13 @@ void ChangeMap(const char[] map)
 	}
 	else
 	{
-		if (CreateEntityByName("game_end") > -1)
+		entity = CreateEntityByName("game_end");
+		if (entity > -1)
 		{
 			if (DispatchSpawn(entity))
 			{
 				AcceptEntityInput(entity, "EndGame");
+				return;
 			}
 			else
 			{
@@ -270,4 +312,17 @@ void ChangeMap(const char[] map)
 			ForceChangeLevel(map, "Map Vote");
 		}
 	}
+	
+//	DataPack data;
+//	CreateTimer(g_Cvar_ChatTime.FloatValue, Timer_End, data, TIMER_FLAG_NO_MAPCHANGE);
+//	data.WriteString(map);
+//	data.Reset();
 }
+
+//public Action Timer_End(Handle timer, DataPack data)
+//{
+//	char map[PLATFORM_MAX_PATH];
+//	data.ReadString(map, sizeof(map));
+//	
+//	ForceChangeLevel(map, "Map Vote");
+//}

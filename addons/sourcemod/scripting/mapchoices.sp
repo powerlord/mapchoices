@@ -33,7 +33,6 @@
 #include <sourcemod>
 
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
-#include "include/map_workshop_functions.inc"
 #include <sdktools>
 
 #pragma semicolon 1
@@ -132,11 +131,11 @@ public void OnPluginStart()
 	LoadTranslations("common.phrases");
 	LoadTranslations("mapchoices.phrases");
 	
-	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
-	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_PLUGIN|FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
-	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", FCVAR_PLUGIN, true, 1.0, true, 15.0);
-	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", FCVAR_PLUGIN, true, 2.0, true, 8.0);
-	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", FCVAR_PLUGIN, true, 0.0, true, 60.0);
+	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
+	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
+	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 1.0, true, 15.0);
+	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
+	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
 	
 	// Core map vote starting stuff
 	
@@ -326,8 +325,8 @@ void ChangeMap(bool isRoundEnd)
 	GetNextMap(map, sizeof(map));
 	
 	Call_StartForward(g_Forward_ChangeMap);
-	Call_PushString(map);
 	Call_PushCell(isRoundEnd);
+	Call_PushString(map);
 	Call_Finish(result);
 	
 	if (result < Plugin_Handled)
