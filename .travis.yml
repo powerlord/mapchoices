@@ -1,12 +1,14 @@
 language: cpp
 compiler: clang
+sudo: false
 
-before_install:
-  - sudo apt-get update -qq
-  - sudo apt-get install -y g++-multilib
+addons:
+  apt:
+    packages:
+      - g++-multilib
 
 install:
-  - wget http://tf2.rbemrose.com/sourcemod/sourcemod-1.7.0-linux.tar.gz -O /tmp/sourcemod.tar.gz
+  - wget http://www.sourcemod.net/smdrop/1.8/sourcemod-1.8.0-git5697-linux.tar.gz -O /tmp/sourcemod.tar.gz
   - tar -xzvf /tmp/sourcemod.tar.gz
 
 before_script:
@@ -16,3 +18,6 @@ before_script:
   
 script:
   - ./spcomp mapchoices.sp
+  - ./spcomp mapchoices-mapend.sp
+  - ./spcomp mapchoices-games/mapchoices-tf2.sp
+  - ./spcomp mapchoices-games/mapchoices-csgo.sp
