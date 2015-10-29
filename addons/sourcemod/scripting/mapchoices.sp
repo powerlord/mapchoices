@@ -403,14 +403,6 @@ void GameEnd()
 
 // Natives
 
-public int Native_ReadMapChoicesList(Handle plugin, int numParams)
-{
-	Handle mapKv = GetNativeCell(1);
-	int serial = GetNativeCellRef(2);
-	
-	//TODO Complete this or remove native
-}
-
 public int Native_RegisterVoteHandler(Handle plugin, int numParams)
 {
 	Function startVote = GetNativeFunction(1);

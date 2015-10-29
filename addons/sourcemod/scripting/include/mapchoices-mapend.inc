@@ -36,6 +36,8 @@
 #endif
 #define _mapchoices_mapend_included_
 
+#include <mapchoices>
+
 // Plugin 1.0 series
 
 native bool MapChoices_MapEnd_VoteEnabled();
@@ -54,9 +56,10 @@ native int MapChoices_MapEnd_GetStartRounds();
 native void MapChoices_MapEnd_SwapTeamScores(MapChoices_Team team1=MapChoices_Team1, MapChoices_Team team2=MapChoices_Team2);
 
 /**
- * Process round end logic.
+ * Process core round end logic.
  * 
  * Call this from a game plugin if a game uses a different event.
+ * Game plugins may use their own internal logic instead (see TF2 plugin)
  * 
  * @param winner		Which team won
  * @param score		What that team's score is.  If -1, use internal scores
@@ -85,7 +88,5 @@ public void __pl_mapchoices_mapend_SetNTVOptional()
 	MarkNativeAsOptional("MapChoices_MapEnd_GetStartRounds");
 	MarkNativeAsOptional("MapChoices_MapEnd_SwapTeamScores");
 	MarkNativeAsOptional("MapChoices_MapEnd_ProcessRoundEnd");
-	MarkNativeAsOptional("MapChoices_MapEnd_OverrideConVar");
-	MarkNativeAsOptional("MapChoices_MapEnd_ResetConVar");
 }
 #endif

@@ -246,10 +246,7 @@ public void UpdateCache()
 		if (IsKeyInStringMap(m_ListLookup, localArray[maplist_name]))
 		{
 			/* The compatibility shim is no longer needed. */
-			if (localArray[maplist_pArray] != null)
-			{
-				delete localArray[maplist_pArray];
-			}
+			delete localArray[maplist_pArray];
 		}
 		else
 		{
@@ -550,12 +547,12 @@ void CopyMapDataArray(ArrayList mapData, ArrayList &newData, Handle plugin)
 
 void FindMapsInDirectory(const char[] directory, ArrayList files)
 {
-	if (!DirExists(directory, true, "GAME"))
+	if (!DirExists(directory, true))
 	{
 		return;
 	}
 	
-	DirectoryListing findHandle = OpenDirectory(directory, true, "GAME");
+	DirectoryListing findHandle = OpenDirectory(directory, true);
 	
 	// Even if a directory exists, a null DirectoryListing handle can be returned due to permissions, etc...
 	if (findHandle == null)
@@ -697,7 +694,7 @@ static bool ReadClassicMapFile(int[] pMapList)
 	File fp;
 	char buffer[PLATFORM_MAX_PATH];
 	
-	if ((fp = OpenFile(pMapList[maplist_path], "rt", true, "GAME")) == null)
+	if ((fp = OpenFile(pMapList[maplist_path], "rt", true)) == null)
 	{
 		return false;
 	}

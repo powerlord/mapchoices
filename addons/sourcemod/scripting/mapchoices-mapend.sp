@@ -133,11 +133,7 @@ public void OnMapStart()
 
 public void OnMapEnd()
 {
-	if (g_hTimeLimitVote != null)
-	{
-		KillTimer(g_hTimeLimitVote);
-		g_hTimeLimitVote = null;
-	}
+	delete g_hTimeLimitVote;
 }
 
 public void OnConfigsExecuted()
@@ -223,10 +219,7 @@ void SetupFragVote()
 
 void SetupTimeleftVote()
 {
-	if (g_hTimeLimitVote != null)
-	{
-		delete g_hTimeLimitVote;
-	}
+	delete g_hTimeLimitVote;
 	
 	int timelimit;
 

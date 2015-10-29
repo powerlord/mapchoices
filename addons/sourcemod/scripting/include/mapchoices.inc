@@ -95,6 +95,7 @@ enum MapChoices_ConVarOverride
 // SM 1.6-style enum because it's an enum-struct
 // Used to store data about a map.
 // Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
+// Other uses may intentionally pass null handles for map and group attributes
 enum mapdata_t
 {
 	String:MapData_Map[PLATFORM_MAX_PATH+1],
@@ -165,7 +166,7 @@ enum groupdata_t
  *						 INVALID_HANDLE is returned, the serial is unchanged, and the input 
  *						 array (if any) is left unchanged.
  *						On success:
- *						 A valid array Handle is returned, containing at least one map string.  
+ *						 A valid array Handle is returned, containing at least one mapdata_t.  
  *						 If an array was passed, the return value is equal to the passed Array 
  *						 Handle.  If the passed array was not cleared, it will have grown by at 
  *						 least one item.  The serial number is updated to a positive number.
@@ -205,6 +206,7 @@ stock void MapChoices_CloseMapList(ArrayList &mapList)
 		int mapData[mapdata_t];
 		mapList.GetArray(i, mapData, sizeof(mapData));
 		delete mapData[MapData_MapAttributes];
+		delete mapData[MapData_GroupAttributes];
 	}
 	delete mapList;
 	mapList = null;
@@ -273,9 +275,10 @@ typedef MapChoices_VoteFinished = function void ();
 /**
  * Start a map vote.
  * 
- * @param when		When should the map change?
- * @param mapList		An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
- * @param mapGroup	Which mapgroup should we use?
+ * @param when			When should the map change?
+ * @param mapList			An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
+ * @param mapGroup		Which mapgroup should we use?
+ * @param finishedFunction	A function to run in the calling plugin after the vote finishes
  */
 native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices", MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 
@@ -285,6 +288,9 @@ native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] modu
 
 /**
  * A map vote started.
+ * 
+ * MapChoices_OnMapVoteEnded will not be called between the original vote and
+ * any runoff votes.
  * 
  * @param runoff	True if this is a runoff vote, false otherwise
  * @noreturn
@@ -415,13 +421,20 @@ typedef MapChoices_ChangeMapForward = function Action (const char[] map, bool is
 native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 
+/**
+ * Set game flags.
+ * 
+ * This enables/disables various parts of MapChoices on a per-game basis.
+ */
 native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
 native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
 
-// For subplugins
-native MapChoices_GameFlags MapChoices_GetGameFlags();
-
-typedef MapChoices_MapNameForward = function void(const char[] map, char[] realMap, int realMapLength);
+/**
+ * Get the bitflags of which game flags are enable.
+ * 
+ * @return 	Bitflags of the gameflags currently set.
+ */
+native int MapChoices_GetGameFlags();
 
 /**
  * Override one of the plugins cvars

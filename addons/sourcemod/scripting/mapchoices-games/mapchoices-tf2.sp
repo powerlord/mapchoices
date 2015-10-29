@@ -104,7 +104,7 @@ public void OnPluginStart()
 	
 	HookEvent("teamplay_win_panel", Event_TeamPlayWinPanel);
 	HookEvent("arena_win_panel", Event_TeamPlayWinPanel);
-	HookEvent("pve_win_pane", Event_PVEWinPanel); // Should be called for MvM round end
+	HookEvent("mvm_wave_complete", Event_MvMWaveComplete); // Should be called for MvM round end
 }
 
 public void OnMapStart()
@@ -221,28 +221,23 @@ void ValidateObjectiveEntity()
 }
 
 // TODO Fix this to make calls to the mapend plugin
-public void Event_PVEWinPanel(Event event, const char[] name, bool dontBroadcast)
+public void Event_MvMWaveComplete(Event event, const char[] name, bool dontBroadcast)
 {
 	if (!g_bMapEndRunning || !MapChoices_MapEnd_VoteEnabled() || MapChoices_MapEnd_HasVoteFinished())
 	{
 		return;
 	}
 	
-	int winner = event.GetInt("winning_team");
+	g_TotalRounds++;
 	
-	if (winner == view_as<int>(MapChoices_Team1))
+	ValidateObjectiveEntity();
+	
+	if (IsValidEntity(g_ObjectiveEnt))
 	{
-		g_TotalRounds++;
-		
-		ValidateObjectiveEntity();
-		
-		if (IsValidEntity(g_ObjectiveEnt))
+		//TODO Check if m_nMannVsMachineWaveCount is the current wave number
+		if (g_TotalRounds >= GetEntProp(g_ObjectiveEnt, Prop_Send, "m_nMannVsMachineWaveCount") - 1)
 		{
-			//TODO Check if m_nMannVsMachineWaveCount is the current wave number
-			if (g_TotalRounds >= GetEntProp(g_ObjectiveEnt, Prop_Send, "m_nMannVsMachineWaveCount") - 1)
-			{
-				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
-			}
+			MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 		}
 	}
 }
@@ -252,7 +247,7 @@ void CheckMaxRounds(int roundCount)
 {
 	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_MapEnd_GetStartRounds())
 	{
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
 }
 
@@ -261,13 +256,13 @@ void CheckWinLimit(int winnerScore, int loserScore)
 {
 	if (g_Cvar_Winlimit.IntValue && winnerScore >= (g_Cvar_Winlimit.IntValue - MapChoices_MapEnd_GetStartRounds()))
 	{
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
 	
 	// Win Difference seems to be exclusive to TF2	
 	if (g_Cvar_Windifference.IntValue && winnerScore >= (g_Cvar_WindifferenceMin.IntValue - 1) && (winnerScore - loserScore) >= (g_Cvar_Windifference.IntValue - 1))
 	{
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-tf2");
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
 	
 }
