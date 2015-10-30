@@ -98,8 +98,8 @@ enum MapChoices_ConVarOverride
 // Other uses may intentionally pass null handles for map and group attributes
 enum mapdata_t
 {
-	String:MapData_Map[PLATFORM_MAX_PATH+1],
-	String:MapData_MapGroup[MAX_GROUP_LENGTH+1],
+	String:MapData_Map[PLATFORM_MAX_PATH],
+	String:MapData_MapGroup[MAX_GROUP_LENGTH],
 	StringMap:MapData_MapAttributes,
 	StringMap:MapData_GroupAttributes,
 };
@@ -109,7 +109,7 @@ enum mapdata_t
 // "classic" will not actually exist, so don't bother looking for it
 enum groupdata_t
 {
-	String:GroupData_Group[MAX_GROUP_LENGTH+1],
+	String:GroupData_Group[MAX_GROUP_LENGTH],
 	StringMap:GroupData_GroupAttributes,
 }
 
@@ -205,11 +205,16 @@ stock void MapChoices_CloseMapList(ArrayList &mapList)
 	{
 		int mapData[mapdata_t];
 		mapList.GetArray(i, mapData, sizeof(mapData));
-		delete mapData[MapData_MapAttributes];
-		delete mapData[MapData_GroupAttributes];
+		MapChoices_DeleteMapData(mapData);
 	}
 	delete mapList;
 	mapList = null;
+}
+
+stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
+{
+	delete mapData[MapData_MapAttributes];
+	delete mapData[MapData_GroupAttributes];
 }
 
 /**
@@ -245,6 +250,14 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
  * @return		True if the nomination was found and removed, or false if the nomination was not found
  */
 //native bool MapChoices_RemoveNominationByOwner(int client);
+
+/**
+ * Get the group for the current map.
+ * 
+ * @param mapGroup	A string to copy the name into
+ * @param maxlength	The length of the string.
+ */
+native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
 
 /**
  * Gets the current list of excluded maps.
@@ -351,21 +364,33 @@ native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
 // --------------------------------------------------------------------------------
 // Functions used by Map Filter plugins
 
-/**
- * Allow the named map to be played?
- * 
- * @param mapGroup	The group the map is in
- * @param map			The map name from a map list
- * @param mapData		A Trie of keys and values for the selected map
- * @param groupData	A Trie of keys and values for the selected group
- * 
- * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
- *
- * Note: Any other plugin can deny the map before your plugin executes this, so do not
- * expect to use this for statistical purposes
- */
-typedef MapChoices_MapFilter = function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
-
+typeset MapChoices_MapFilter
+{
+	// Allow the named map to be played?
+	//
+	// Note: Any other plugin can deny the map before your plugin executes this, so do not
+	// expect to use this for statistical purposes
+	// 
+	// @param mapGroup	The group the map is in
+	// @param map			The map name from a map list
+	// @param mapData		A Trie of keys and values for the selected map
+	// @param groupData	A Trie of keys and values for the selected group
+	// 
+	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+	///
+	function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
+	// Allow the named map to be played?
+	//
+	// Note: Any other plugin can deny the map before your plugin executes this, so do not
+	// expect to use this for statistical purposes
+	// 
+	// @param mapGroup	The group the map is in
+	// @param map			The map name from a map list
+	// 
+	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+	///
+	function Action (const char[] mapGroup, const char[] map);
+};
 
 /**
  * Get a Trie of keys and values for a map.

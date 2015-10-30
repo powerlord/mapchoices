@@ -36,8 +36,6 @@
 #endif
 #define _mapchoices_mapend_included_
 
-#include <mapchoices>
-
 // Plugin 1.0 series
 
 native bool MapChoices_MapEnd_VoteEnabled();

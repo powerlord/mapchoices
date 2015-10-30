@@ -221,23 +221,10 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 
 void CheckMaxRounds(int roundCount)
 {
-	// TODO MaxRounds logic
-	
-	//CS:GO Clinch support
-	if (g_Cvar_MatchClinch && g_Cvar_Maxrounds)
+	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_MapEnd_GetStartRounds())
 	{
-		if (g_Cvar_MatchClinch.BoolValue)
-		{
-			int maxrounds = g_Cvar_Maxrounds.IntValue;
-			int winlimit = RoundFloat(maxrounds / 2.0);
-			
-			if(winner_score == winlimit - 1)
-			{
-				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-csgo");
-			}
-		}
+		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 	}
-	
 }
 
 void CheckWinLimit(int winner_score)
@@ -249,11 +236,25 @@ void CheckWinLimit(int winner_score)
 		{			
 			if (winner_score >= (winlimit - MapChoices_MapEnd_GetStartRounds()))
 			{
-				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-csgo");
+				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
 			}
 		}
 	}
 	
+	//CS:GO Clinch support
+	if (g_Cvar_MatchClinch && g_Cvar_Maxrounds)
+	{
+		if (g_Cvar_MatchClinch.BoolValue)
+		{
+			int maxrounds = g_Cvar_Maxrounds.IntValue;
+			int winlimit = RoundFloat(maxrounds / 2.0);
+			
+			if(winner_score == winlimit - 1)
+			{
+				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+			}
+		}
+	}
 }
 
 public Action CSGO_ChangeMap(const char[] map, bool isRoundEnd)
