@@ -32,7 +32,7 @@
  */
 #include <sourcemod>
 
-#include "include/mapchoices" // Include our own file to gain access to enums and the like
+#include "../include/mapchoices" // Include our own file to gain access to enums and the like
 
 #pragma semicolon 1
 #pragma newdecls required
