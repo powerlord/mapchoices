@@ -42,8 +42,11 @@
 #define MAX_GROUP_LENGTH 64
 #define MAX_MAP_ATTRIBUTES 16
 
-// Team list for score swapping.
-// Note: It's not clear if any games use Team3 and Team4, although ostensibly Fortress Forever does
+/**
+ * Team list for score swapping.
+ * 
+ * Note: It's not clear if any games use Team3 and Team4, although ostensibly Fortress Forever does
+ */
 enum MapChoices_Team
 {
 	MapChoices_TeamUnassigned,
@@ -54,36 +57,51 @@ enum MapChoices_Team
 	MapChoices_Team4,
 }
 
+/**
+ * The kind of map list being loaded.
+ */
 enum MapChoices_MapListType
 {
-	MapChoicesMapList_Classic,
-	MapChoicesMapList_Advanced,
+	MapChoicesMapList_Classic,					/**< A classic MapChooser-style maplist */
+	MapChoicesMapList_Advanced,					/**< An advanced UMC-style maplist */
 }
 
+/**
+ * Nominating a map can have various results
+ */
 enum MapChoices_NominateResult
 {
-	MapChoicesNominateResult_Added,		/** The map was added */
-	MapChoicesNominateResult_Rejected,	/** The map was rejected by a map filter */
-	MapChoicesNominateResult_InvalidMap,	/** The map doesn't exist. */
-	MapChoicesNominateResult_AlreadyInVote, /** The map is already in the list and you tried to constant nominate it */
+	MapChoicesNominateResult_Added,				/**< The map was added */
+	MapChoicesNominateResult_Rejected,			/**< The map was rejected by a map filter */
+	MapChoicesNominateResult_InvalidMap,		/**< The map doesn't exist */
+	MapChoicesNominateResult_AlreadyInVote,		/**< The map is already in the list and you tried to constant nominate it */
 };
 
+/**
+ * When should the map change?
+ */
 enum MapChoices_MapChange
 {
-	MapChoicesMapChange_Instant,		/** Change map as soon as the voting results have come in */
-	MapChoicesMapChange_RoundEnd,		/** Change map at the end of the round */
-	MapChoicesMapChange_MapEnd,			/** Change the sm_nextmap cvar */
+	MapChoicesMapChange_Instant,				/**< Change map as soon as the voting results have come in */
+	MapChoicesMapChange_RoundEnd,				/**< Change map at the end of the round */
+	MapChoicesMapChange_MapEnd,					/**< Change the sm_nextmap cvar */
 };
 
+/**
+ * Compatibility flags for Game Plugins
+ */
 enum MapChoices_GameFlags
 {
 	MapChoicesGame_None = 0,
-	MapChoicesGame_NoGameEnd = (1<<0),			/** Game does NOT support game_end entities */
-	MapChoicesGame_SupportsFragLimit = (1<<1),	/** Game supports frag limits: HL2:DM, Neotokyo (?) */
-	MapChoicesGame_OverrideRoundEnd = (1<<2),	/** Game plugin will handle round_end event manually */
-	MapChoicesGame_AvoidHintbox = (1<<3),		/** Game text should not be displayed in hintboxes: HL2:DM */
+	MapChoicesGame_NoGameEnd = (1<<0),			/**< Game does NOT support game_end entities */
+	MapChoicesGame_SupportsFragLimit = (1<<1),	/**< Game supports frag limits: HL2:DM, Neotokyo (?) */
+	MapChoicesGame_OverrideRoundEnd = (1<<2),	/**< Game plugin will handle round_end event manually */
+	MapChoicesGame_AvoidHintbox = (1<<3),		/**< Game text should not be displayed in hintboxes: HL2:DM */
 }
 
+/**
+ * ConVars that Game Plugins can override
+ */
 enum MapChoices_ConVarOverride
 {
 	MapChoicesConVar_BonusTime,
@@ -103,6 +121,7 @@ enum mapdata_t
 	StringMap:MapData_MapAttributes,
 	StringMap:MapData_GroupAttributes,
 };
+
 
 // 1.6-style enum to store group data
 // Note that the StringMap may be null if there were no attributes
@@ -144,7 +163,7 @@ enum groupdata_t
  * Modifying arrays created by this function will not affect future return values or 
  * or the contents of arrays returned to other plugins.
  *
- * @param array			Array to store the map list.  If INVALID_HANDLE, a new blank 
+ * @param array		Array to store the map list.  If INVALID_HANDLE, a new blank 
  *						array will be created.  The blocksize should be mapdata_t; 
  *						otherwise results may be truncated.  Items are added to the array
  *						as mapdata_t arrays.  The array is never checked for duplicates, 
@@ -158,19 +177,19 @@ enum groupdata_t
  *						should be somewhat descriptive.  For example, the admin menu uses 
  *						a config name of "admin menu".  The list names can be configured 
  *						by users in addons/sourcemod/configs/maplists.cfg.
- * @param flags			MAPLIST_FLAG flags.
- * @return				On failure:
- *						 INVALID_HANDLE is returned, the serial is set to -1, and the input 
- *						 array (if any) is left unchanged.
- *						On no change:
- *						 INVALID_HANDLE is returned, the serial is unchanged, and the input 
- *						 array (if any) is left unchanged.
- *						On success:
- *						 A valid array Handle is returned, containing at least one mapdata_t.  
- *						 If an array was passed, the return value is equal to the passed Array 
- *						 Handle.  If the passed array was not cleared, it will have grown by at 
- *						 least one item.  The serial number is updated to a positive number.
- * @error				Invalid array Handle that is not INVALID_HANDLE.
+ * @param flags		MAPLIST_FLAG flags.
+ * @return			On failure:
+ *						INVALID_HANDLE is returned, the serial is set to -1, and the input 
+ *						array (if any) is left unchanged.
+ *					On no change:
+ *						INVALID_HANDLE is returned, the serial is unchanged, and the input 
+ *						array (if any) is left unchanged.
+ *					On success:
+ *						A valid array Handle is returned, containing at least one mapdata_t.  
+ *						If an array was passed, the return value is equal to the passed Array 
+ *						Handle.  If the passed array was not cleared, it will have grown by at 
+ *						least one item.  The serial number is updated to a positive number.
+ * @error			Invalid array Handle that is not INVALID_HANDLE.
  */
 native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
@@ -208,9 +227,11 @@ stock void MapChoices_CloseMapList(ArrayList &mapList)
 		MapChoices_DeleteMapData(mapData);
 	}
 	delete mapList;
-	mapList = null;
 }
 
+/**
+ * Delete a single map entry
+ */
 stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
 {
 	delete mapData[MapData_MapAttributes];
@@ -225,9 +246,10 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
  * 
  * @param map		Map to add.
  * @param owner	The person nominating the map. Use 0 for constant nominations.
+ * @param group	The group of the map, defaults to "default"
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner);
+native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner, const char[] group="default");
 
 /**
  * Attempt to remove a map from the MapChoices map list.
@@ -259,18 +281,22 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
  */
 native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
 
+// Check if this is possible with new architecture
 /**
  * Gets the current list of excluded maps.
  * 
  * @param array	An ADT array handle to add the map strings to.
  * @noreturn
  */
-native void MapChoices_GetExcludedMapList(ArrayList array);
+//native void MapChoices_GetExcludedMapList(ArrayList array);
 
 /**
  * Gets the current list of nominated maps.
  * 
- * @param maparray	An ADT array handle to add the map strings to.
+ * Note: Returns copies of the array, updating these arrays do not change the originals.
+ * 
+ * @param maparray	An ADT array handle of mapdata_t arrays that store information about the nominated maps.
+ * 					Remember to delete this ArrayList or call MapChoices_CloseMapList on it.
  * @param ownerarray	An optional ADT array handle to add the nominator client indexes to.
  * @noreturn
  */

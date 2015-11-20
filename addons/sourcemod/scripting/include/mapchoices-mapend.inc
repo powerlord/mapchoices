@@ -38,15 +38,32 @@
 
 // Plugin 1.0 series
 
+/**
+ * Is the MapEnd vote enabled?
+ * 
+ * @return 		true if end map vote is enabled, false if not.
+ */
 native bool MapChoices_MapEnd_VoteEnabled();
 
+/**
+ * Has the MapEnd vote finished?
+ * 
+ * @return		true if map vote has finished, false if not.
+ */
 native bool MapChoices_MapEnd_HasVoteFinished();
 
+/**
+ * How many rounds before the map vote starts
+ * 
+ * Note: This may be disabled for special map types, such as TF2's MvM or CSGO's Arms Race
+ * 
+ * @return		Number of rounds before vote starts
+ */
 native int MapChoices_MapEnd_GetStartRounds();
 
 /**
  * Called by Game plugins to swap scores.
- * Swap the scores for team 1 and team 2.
+ * Swap the scores for team1 and team2.
  * 
  * @param team1	First team to swap.
  * @param team2	Second team to swap.

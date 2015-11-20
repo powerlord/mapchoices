@@ -39,8 +39,18 @@
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
 
-StringMap g_Trie_NominatedMaps;
-char g_MapNominations[MAXPLAYERS+1][PLATFORM_MAX_PATH];
+// SM 1.6 style array to store nominations data
+enum nominations_t
+{
+	String:NominationsData_Map[PLATFORM_MAX_PATH],
+	String:NominationsData_MapGroup[MAX_GROUP_LENGTH],
+	NominationsData_Count
+}
+
+// ArrayList of nominations_t
+ArrayList g_Array_NominatedMaps;
+
+int g_MapNominations[MAXPLAYERS+1][nominations_t];
 
 //ConVars
 ConVar g_Cvar_Enabled;
@@ -123,6 +133,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	
 	CreateNative("MapChoices_GetCurrentMapGroup", Native_GetCurrentMapGroup);
 	
+	CreateNative("MapChoices_GetNominatedMapList", Native_GetNominatedMapList);
+	
 	RegPluginLibrary("mapchoices");
 }
   
@@ -141,6 +153,8 @@ public void OnPluginStart()
 	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
 	
 	// Core map vote starting stuff
+	
+	g_Array_NominatedMaps = new ArrayList(nominations_t);
 	
 	// Valve cvars
 	// g_Cvar_Timelimit = FindConVar("mp_timelimit");
@@ -161,11 +175,10 @@ public void OnPluginStart()
 	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
 	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook);
-	
-	
+		
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_String, Param_Cell, Param_Cell);
 	
-	g_Forward_ChangeMap = CreateForward(ET_Hook, Param_String, Param_Cell);
+	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
 	g_MapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
 	
@@ -188,28 +201,51 @@ public void OnMapStart()
 public void OnClientDisconnect(int client)
 {
 	// Clear the client's nominations
-	if (g_MapNominations[client][0] != '\0')
+	
+	if (g_MapNominations[client][NominationsData_Map][0] != '\0')
 	{
-		int count;
-		if (g_Trie_NominatedMaps.GetValue(g_MapNominations[client], count))
+		int location = FindMapInNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_MapGroup]);
+		if (location > -1)
 		{
-			--count;
+			int nominationsData[nominations_t];
+			g_Array_NominatedMaps.GetArray(location, nominationsData, sizeof(nominationsData));
 			
-			if (count <= 0)
+			nominationsData[NominationsData_Count]--;
+			
+			if (nominationsData[NominationsData_Count] <= 0)
 			{
-				// Whoops, no more nominations for this map, so lets remove it.
-				g_Trie_NominatedMaps.Remove(g_MapNominations[client]);
+				// Whoops, no more nominations for this map, so lets remove it
+				g_Array_NominatedMaps.Erase(location);
 			}
 			else
 			{
-				// Save the new count back to the trie
-				g_Trie_NominatedMaps.SetValue(g_MapNominations[client], count);
+				// Save the new count back.
+				g_Array_NominatedMaps.SetArray(location, nominationsData, sizeof(nominationsData));
 			}
 		}
 		
-		g_MapNominations[client][0] = '\0';
+		g_MapNominations[client][NominationsData_Map][0] = '\0';
+		g_MapNominations[client][NominationsData_MapGroup][0] = '\0';
+		
 	}
 }
+
+int FindMapInNominations(const char[] map, const char group[]="default")
+{
+	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
+	{
+		int nominationsData[nominations_t];
+		g_Array_NominatedMaps.GetArray(i, nominationsData, sizeof(nominationsData));
+		
+		if (StrEqual(map, nominationsData[NominationsData_Map]) && StrEqual(group, nominationsData[NominationsData_MapGroup]))
+		{
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
 
 void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 {
@@ -571,4 +607,65 @@ public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
 	strcopy(outString, maxlength, g_MapGroup);
 	
 	SetNativeString(1, outString, maxlength);
+}
+
+public int Native_GetNominatedMapList(Handle plugin, int numParams)
+{
+	ArrayList maparray = view_as<ArrayList>(GetNativeCell(1));
+	ArrayList ownerarray = view_as<ArrayList>(GetNativeCell(2));
+	
+	if (maparray == null)
+		return;
+	
+	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
+	{
+		int nominationsData[nominations_t];
+		g_Array_NominatedMaps.GetArray(i, nominationsData, sizeof(nominationsData));
+		
+		int mapData[mapdata_t];
+		strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), nominationsData[NominationsData_Map]);
+		strcopy(mapData[MapData_MapGroup], sizeof(mapData[MapData_MapGroup]), nominationsData[NominationsData_MapGroup]);
+		
+		maparray.PushArray(mapData, sizeof(mapData));
+	}
+	
+	//TODO Nomination owner array stuff
+}
+
+public int Native_Nominate(Handle plugin, int numParams)
+{
+	int mapLength;
+	int groupLength;
+
+	GetNativeStringLength(1, mapLength);
+	GetNativeStringLength(3, groupLength);
+	
+	if (mapLength <= 0 || groupLength <= 0)
+	{
+		return false;
+	}
+	
+	char[] map = new char[mapLength+1];
+	GetNativeString(1, map, mapLength+1);
+	
+	char[] group = new char[groupLength+1];
+	GetNativeString(3, group, groupLength+1);
+	
+	return view_as<int>(InternalNominateMap(map, GetNativeCell(2), group));
+}
+
+MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] group)
+{
+	if (!IsMapValid(map))
+	{
+		return MapChoicesNominateResult_InvalidMap;
+	}
+	
+	int pos = FindMapInNominations(map, group);
+	if (pos > -1)
+	{
+		
+	}
+	
+	// TODO Finish this, possible changing the count to a list of nominators
 }
