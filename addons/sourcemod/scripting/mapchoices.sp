@@ -47,7 +47,6 @@ ConVar g_Cvar_Enabled;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
 ConVar g_Cvar_WarningTime;
-ConVar g_Cvar_RecentMaps;
 
 // Valve ConVars
 //ConVar g_Cvar_Timelimit;
@@ -89,9 +88,8 @@ int g_VoteStartRound = 0;
 
 ArrayList g_MapList = null;
 int g_Serial = -1;
-ArrayList g_RecentMapList = null; // ArrayList of mapdata_t instances
 
-char g_NextMapGroup[MAX_GROUP_LENGTH];
+char g_MapGroup[MAX_GROUP_LENGTH];
 
 //new Handle:m_ListLookup;
 
@@ -123,6 +121,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_OverrideConVar", Native_OverrideConVar);
 	CreateNative("MapChoices_ResetConVar", Native_ResetConVar);
 	
+	CreateNative("MapChoices_GetCurrentMapGroup", Native_GetCurrentMapGroup);
+	
 	RegPluginLibrary("mapchoices");
 }
   
@@ -139,7 +139,6 @@ public void OnPluginStart()
 	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 1.0, true, 15.0);
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
 	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
-	g_Cvar_RecentMaps = CreateConVar("mapchoices_skiprecentmaps", "5", "How many recent maps to skip in the map list? Note: The same map in different groups will be considered different maps.", _, true, 0.0);
 	
 	// Core map vote starting stuff
 	
@@ -169,7 +168,6 @@ public void OnPluginStart()
 	g_Forward_ChangeMap = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
 	g_MapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
-	g_RecentMapList = new ArrayList(mapdata_t);
 	
 	HookEvent("round_end", Event_RoundEnd);
 	HookEventEx("round_win", Event_RoundEnd);
@@ -185,24 +183,6 @@ public void OnMapStart()
 	
 	g_bMapVoteInProgress = false;
 	g_bMapVoteCompleted = false;
-	
-	if (g_Cvar_RecentMaps.IntValue)
-	{
-		if (g_RecentMapList.Length >= g_Cvar_RecentMaps.IntValue)
-		{
-			for (int i = g_RecentMapList.Length; i >= g_Cvar_RecentMaps.IntValue - 1; i--)
-			{
-				// We don't want to close the data as its just a pointer to an entry in the mapList
-				g_RecentMapList.Erase(0);
-			}
-		}
-		
-		int mapData[mapdata_t];
-		
-		GetCurrentMap(mapData[MapData_Map], sizeof(mapData[MapData_Map]));
-		strcopy(mapData[MapData_MapGroup], sizeof(mapData[MapData_MapGroup]), g_NextMapGroup);
-		g_RecentMapList.PushArray(mapData);
-	}
 }
 
 public void OnClientDisconnect(int client)
@@ -580,4 +560,15 @@ public int Native_GetConVarOverride(Handle plugin, int numParams)
 	}
 	
 	return view_as<int>(out);
+}
+
+// native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
+public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
+{
+	int maxlength = GetNativeCell(2);
+	
+	char[] outString = new char[maxlength];
+	strcopy(outString, maxlength, g_MapGroup);
+	
+	SetNativeString(1, outString, maxlength);
 }

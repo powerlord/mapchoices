@@ -44,8 +44,6 @@ ConVar g_Cvar_RecentMaps;
 
 ArrayList g_RecentMapList = null; // ArrayList of mapdata_t instances
 
-char g_NextMapGroup[MAX_GROUP_LENGTH];
-
 public Plugin myinfo = {
 	name			= "MapChoices Recently Played",
 	author			= "Powerlord",
@@ -88,8 +86,11 @@ public void OnMapStart()
 		
 		int mapData[mapdata_t];
 		
+		char mapGroup[MAX_GROUP_LENGTH];
+		MapChoices_GetCurrentMapGroup(mapGroup, sizeof(mapGroup));
+		
 		GetCurrentMap(mapData[MapData_Map], sizeof(mapData[MapData_Map]));
-		strcopy(mapData[MapData_MapGroup], sizeof(mapData[MapData_MapGroup]), g_NextMapGroup);
+		strcopy(mapData[MapData_MapGroup], sizeof(mapData[MapData_MapGroup]), mapGroup);
 		g_RecentMapList.PushArray(mapData);
 	}
 }
