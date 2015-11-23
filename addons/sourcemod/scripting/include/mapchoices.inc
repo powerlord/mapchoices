@@ -315,9 +315,12 @@ typedef MapChoices_VoteFinished = function void ();
  * Start a map vote.
  * 
  * @param when			When should the map change?
- * @param mapList			An initial list of maps to use.  Will be supplmented by maps from the mapGroup if necessary.
+ * @param mapList			An initial list of maps to use.  Will be supplemented by maps from the mapGroup if necessary.
  * @param mapGroup		Which mapgroup should we use?
  * @param finishedFunction	A function to run in the calling plugin after the vote finishes
+ * 
+ * TODO: Figure out if we really want module
+ * TODO: Document what's in mapList as it's not just a flat list.
  */
 native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices", MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 
@@ -345,25 +348,27 @@ forward void MapChoices_OnMapVoteStarted(bool runoff);
  * @param group	If the map was part of a group, which group it was from.
  * @noreturn
  */
-forward void MapChoices_OnMapVoteEnded(const char[] map, bool instant, const char[] group);
+forward void MapChoices_OnMapVoteEnded(const char[] map, const char[] group, bool instant);
 
 /**
  * A map was added to the nominations list.
  * 
+ * NOTE: 
+ * 
  * @param map		The map that was added.
  * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
- * 
+ * @param newMap	True if the map was added to the nominations list for the first time, false if it was already nominated
  */
-forward void MapChoices_OnNominationAdded(const char[] map, int owner);
+forward void MapChoices_OnNominationAdded(const char[] map, const char[] group, int owner, bool newMap);
 
 /**
  * A map has been removed from the nominations list.
  * 
  * @param map		The map that was removed.
  * @param owner	The user that added the map.
- * 
+ * @param removed	True if this map was removed entirely, false if there are still nominations for it.
  */
-forward void MapChoices_OnNominationRemoved(const char[] map, int owner);
+forward void MapChoices_OnNominationRemoved(const char[] map, const char[] group, int owner, bool removed);
 
 // --------------------------------------------------------------------------------
 // Functions used by Vote System plugins (read: NativeVotes)

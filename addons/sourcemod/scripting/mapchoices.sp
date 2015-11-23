@@ -40,11 +40,12 @@
 #define VERSION "1.0.0 alpha 1"
 
 // SM 1.6 style array to store nominations data
+// Note that NominationsData_Nominators is not used in g_MapNominations
 enum nominations_t
 {
 	String:NominationsData_Map[PLATFORM_MAX_PATH],
 	String:NominationsData_MapGroup[MAX_GROUP_LENGTH],
-	NominationsData_Count
+	ArrayList:NominationsData_Nominators
 }
 
 // ArrayList of nominations_t
@@ -168,9 +169,9 @@ public void OnPluginStart()
 	
 	// State change forwards
 	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_OnMapVoteStarted", ET_Ignore, Param_Cell);
-	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_OnMapVoteEnded", ET_Ignore, Param_String, Param_Cell, Param_String);
-	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_Cell);
-	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_Cell);
+	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_OnMapVoteEnded", ET_Ignore, Param_String, Param_String, Param_Cell);
+	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
+	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	
 	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
@@ -191,6 +192,8 @@ public void OnPluginStart()
 
 public void OnMapStart()
 {
+	InternalLoadMapList();
+	
 	g_bChangeAtRoundEnd = false;
 	g_bTempIgnoreRoundEnd = false;
 	
@@ -204,29 +207,10 @@ public void OnClientDisconnect(int client)
 	
 	if (g_MapNominations[client][NominationsData_Map][0] != '\0')
 	{
-		int location = FindMapInNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_MapGroup]);
-		if (location > -1)
-		{
-			int nominationsData[nominations_t];
-			g_Array_NominatedMaps.GetArray(location, nominationsData, sizeof(nominationsData));
-			
-			nominationsData[NominationsData_Count]--;
-			
-			if (nominationsData[NominationsData_Count] <= 0)
-			{
-				// Whoops, no more nominations for this map, so lets remove it
-				g_Array_NominatedMaps.Erase(location);
-			}
-			else
-			{
-				// Save the new count back.
-				g_Array_NominatedMaps.SetArray(location, nominationsData, sizeof(nominationsData));
-			}
-		}
+		RemoveMapFromNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_MapGroup], client);
 		
 		g_MapNominations[client][NominationsData_Map][0] = '\0';
 		g_MapNominations[client][NominationsData_MapGroup][0] = '\0';
-		
 	}
 }
 
@@ -246,6 +230,70 @@ int FindMapInNominations(const char[] map, const char group[]="default")
 	return -1;
 }
 
+bool RemoveMapFromNominations(const char[] map, const char group[]="default", int client = 0)
+{
+	int location = FindMapInNominations(map, group);
+	if (location > -1)
+	{
+		bool removed = false;
+		
+		int nominationsData[nominations_t];
+		g_Array_NominatedMaps.GetArray(location, nominationsData, sizeof(nominationsData));
+		
+		int pos = nominationsData[NominationsData_Nominators].FindValue(client);
+		
+		// This should always exist unless something went wrong
+		if (pos > -1)
+		{
+			nominationsData[NominationsData_Nominators].Erase(pos);
+		}
+		
+		if (nominationsData[NominationsData_Nominators].Length == 0)
+		{
+			// Whoops, no more nominations for this map, so lets remove it
+			delete nominationsData[NominationsData_Nominators]; // close handle for nominated map
+			g_Array_NominatedMaps.Erase(location);
+			removed = true;
+		}
+		
+		Call_StartForward(g_Forward_NominationRemoved);
+		Call_PushString(nominationsData[NominationsData_Map]);
+		Call_PushString(nominationsData[NominationsData_MapGroup]);
+		Call_PushCell(client);
+		Call_PushCell(removed);
+		Call_Finish();
+		
+		return true;
+	}
+	
+	return false;
+}
+
+int FindMapInMapList(const char[] map, const char[] group="default")
+{
+	for (int i = 0; i < g_MapList.Length; i++)
+	{
+		int mapData[mapdata_t];
+		g_MapList.GetArray(i, mapData, sizeof(mapData));
+		
+		if (StrEqual(mapData[MapData_Map], map) && StrEqual(mapData[MapData_MapGroup], group))
+		{
+			return i;
+		}
+	}
+	
+	return -1;
+}
+
+void InternalLoadMapList()
+{
+	// We're calling the external function here.  This way, if we move it to a subplugin, we can just copy/paste.
+	if (MapChoices_ReadMapList(g_MapList, g_Serial, "mapchoices", MAPLIST_FLAG_CLEARARRAY|MAPLIST_FLAG_MAPSFOLDER) == null && g_Serial == -1)
+	{
+			SetFailState("Could not load map list");
+	}
+	
+}
 
 void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 {
@@ -268,11 +316,7 @@ void StartVote(MapChoices_MapChange when, ArrayList mapList=null)
 		// Figure out which maps we need to fetch
 		
 		// will involve a call to LoadMapList
-		if (LoadMapList(g_MapList, g_Serial, "mapchoices", MAPLIST_FLAG_CLEARARRAY|MAPLIST_FLAG_MAPSFOLDER) == null)
-		{
-			//TODO Decide how to recover from this error
-			SetFailState("Could not load map list");
-		}
+		InternalLoadMapList();
 	}
 	
 	// TODO the rest of the logic to start the vote
@@ -320,23 +364,6 @@ bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, 
 	
 	return true;
 }
-
-//Replaced with LoadMapList in parse-mapchooser-config.inc which implements the MapChoices_ReadMapList native
-/*
-stock ArrayList ReadMapChoicesList(ArrayList kv=null, int &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY)
-{
-	KeyValues kvConfig = new KeyValues("MapChoices");
-	
-	char configFile[PLATFORM_MAX_PATH+1];
-	
-	BuildPath(Path_SM, configFile, sizeof(configFile), "%s", CONFIGFILE);
-	if (!FileToKeyValues(kvConfig, configFile))
-	{
-		SetFailState("Could not read configuration file: %s", configFile);
-	}
-	
-}
-*/
 
 // Events
 // Note: These are just the shared events
@@ -661,11 +688,46 @@ MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] grou
 		return MapChoicesNominateResult_InvalidMap;
 	}
 	
+	int mapData[mapdata_t];
+	int pos = FindMapInMapList(map, group);
+	
+	if (pos == -1)
+	{
+		//TODO New return type for maps rejected because they're not in the mapgroup?
+		return MapChoicesNominateResult_InvalidMap;
+	}
+	
+	bool newMap = false;
+	int nominationsData[nominations_t];
+
 	int pos = FindMapInNominations(map, group);
 	if (pos > -1)
 	{
+		g_Array_NominatedMaps.GetArray(pos, nominationsData, sizeof(nominationsData));
+		
+		nominationsData[NominationsData_Nominators].Push(owner);
 		
 	}
+	else
+	{
+		// Create the data for this nomination
+		strcopy(nominationsData[NominationsData_Map], sizeof(nominationsData[NominationsData_Map]), map);
+		strcopy(nominationsData[NominationsData_MapGroup], sizeof(nominationsData[NominationsData_MapGroup]), group);
+		nominationsData[NominationsData_Nominators] = new ArrayList();
+		nominationsData[NominationsData_Nominators].Push(owner);
+		
+		g_Array_NominatedMaps.PushArray(nominationsData);
+		newMap = true;
+	}
+	
+	Call_StartForward(g_Forward_NominationAdded);
+	Call_PushString(map);
+	Call_PushString(group);
+	Call_PushCell(owner);
+	Call_PushCell(newMap);
+	Call_Finish();
+	
+	return MapChoicesNominateResult_Added;
 	
 	// TODO Finish this, possible changing the count to a list of nominators
 }
