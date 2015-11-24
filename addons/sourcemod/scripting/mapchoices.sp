@@ -44,7 +44,7 @@
 enum nominations_t
 {
 	String:NominationsData_Map[PLATFORM_MAX_PATH],
-	String:NominationsData_MapGroup[MAX_GROUP_LENGTH],
+	String:NominationsData_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH],
 	ArrayList:NominationsData_Nominators
 }
 
@@ -81,6 +81,7 @@ Handle g_Forward_HandlerCancelVote;
 Handle g_Forward_HandlerIsVoteInProgress;
 
 Handle g_Forward_MapFilter;
+Handle g_Forward_GroupFilter;
 
 Handle g_Forward_ChangeMap;
 
@@ -100,7 +101,7 @@ int g_VoteStartRound = 0;
 ArrayList g_MapList = null;
 int g_Serial = -1;
 
-char g_MapGroup[MAX_GROUP_LENGTH];
+char g_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 
 //new Handle:m_ListLookup;
 
@@ -126,6 +127,8 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	// Map filter natives
 	CreateNative("MapChoices_RegisterMapFilter", Native_AddMapFilter);
 	CreateNative("MapChoices_RemoveMapFilter", Native_RemoveMapFilter);
+	CreateNative("MapChoices_RegisterGroupFilter", Native_AddGroupFilter);
+	CreateNative("MapChoices_UnregisterGroupFilter", Native_RemoveGroupFilter);
 	
 	CreateNative("MapChoices_WillChangeAtRoundEnd", Native_WillChangeAtRoundEnd);
 	
@@ -135,6 +138,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_GetCurrentMapGroup", Native_GetCurrentMapGroup);
 	
 	CreateNative("MapChoices_GetNominatedMapList", Native_GetNominatedMapList);
+	CreateNative("MapChoices_GetNominatedMapOwners", Native_GetNominatedMapOwners);
 	
 	RegPluginLibrary("mapchoices");
 }
@@ -178,6 +182,7 @@ public void OnPluginStart()
 	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook);
 		
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_String, Param_String, Param_Cell, Param_Cell);
+	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_String, Param_Cell);
 	
 	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
@@ -214,7 +219,7 @@ public void OnClientDisconnect(int client)
 	}
 }
 
-int FindMapInNominations(const char[] map, const char group[]="default")
+int FindMapInNominations(const char[] map, const char group[]=MAPCHOICES_DEFAULTGROUP)
 {
 	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
 	{
@@ -230,7 +235,7 @@ int FindMapInNominations(const char[] map, const char group[]="default")
 	return -1;
 }
 
-bool RemoveMapFromNominations(const char[] map, const char group[]="default", int client = 0)
+bool RemoveMapFromNominations(const char[] map, const char group[]=MAPCHOICES_DEFAULTGROUP, int client = 0)
 {
 	int location = FindMapInNominations(map, group);
 	if (location > -1)
@@ -269,7 +274,7 @@ bool RemoveMapFromNominations(const char[] map, const char group[]="default", in
 	return false;
 }
 
-int FindMapInMapList(const char[] map, const char[] group="default")
+int FindMapInMapList(const char[] map, const char[] group=MAPCHOICES_DEFAULTGROUP)
 {
 	for (int i = 0; i < g_MapList.Length; i++)
 	{
@@ -364,6 +369,22 @@ bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, 
 	
 	return true;
 }
+
+bool CheckGroupFilter(const char[] mapGroup, StringMap groupData)
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_GroupFilter);
+	Call_PushString(mapGroup);
+	Call_PushCell(groupData);
+	Call_Finish(result);
+	if (result >= Plugin_Handled)
+	{
+		return false;
+	}
+	
+	return true;
+}
+
 
 // Events
 // Note: These are just the shared events
@@ -509,6 +530,20 @@ public int Native_RemoveMapFilter(Handle plugin, int numParams)
 	return RemoveFromForward(g_Forward_MapFilter, plugin, func);
 }
 
+public int Native_AddGroupFilter(Handle plugin, int numParams)
+{
+	Function func = GetNativeFunction(1);
+	
+	return AddToForward(g_Forward_GroupFilter, plugin, func);
+}
+
+public int Native_RemoveGroupFilter(Handle plugin, int numParams)
+{
+	Function func = GetNativeFunction(1);
+	
+	return RemoveFromForward(g_Forward_GroupFilter, plugin, func);
+}
+
 public int Native_StartVote(Handle plugin, int numParams)
 {
 	MapChoices_MapChange when = GetNativeCell(1);
@@ -638,11 +673,7 @@ public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
 
 public int Native_GetNominatedMapList(Handle plugin, int numParams)
 {
-	ArrayList maparray = view_as<ArrayList>(GetNativeCell(1));
-	ArrayList ownerarray = view_as<ArrayList>(GetNativeCell(2));
-	
-	if (maparray == null)
-		return;
+	ArrayList maparray = new ArrayList(mapdata_t);
 	
 	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
 	{
@@ -656,7 +687,38 @@ public int Native_GetNominatedMapList(Handle plugin, int numParams)
 		maparray.PushArray(mapData, sizeof(mapData));
 	}
 	
-	//TODO Nomination owner array stuff
+	return view_as<int>(maparray);
+}
+
+public int Native_GetNominatedMapOwners(Handle plugin, int numParams)
+{
+	int stringLength;
+	GetNativeStringLength(1, stringLength);
+	char[] map = new char[stringLength + 1];
+	GetNativeString(1, map, stringLength + 1);
+	
+	GetNativeStringLength(2, stringLength);
+	char[] group = new char[stringLength + 1];
+	GetNativeString(2, group, stringLength + 1);
+	
+	int pos = FindMapInNominations(map, group);
+	
+	if (pos == -1)
+		return view_as<int>(INVALID_HANDLE);
+	
+	int mapData[nominations_t];
+	
+	g_Array_NominatedMaps.GetArray(pos, mapData, sizeof(mapData));
+	
+	ArrayList returnList = null;
+	if (mapData[NominationsData_Nominators] == null)
+		return view_as<int>(INVALID_HANDLE);
+		
+	ArrayList tempList = mapData[NominationsData_Nominators].Clone();
+	returnList = view_as<ArrayList>(CloneHandle(tempList, plugin));
+	delete tempList;
+	
+	return view_as<int>(returnList);
 }
 
 public int Native_Nominate(Handle plugin, int numParams)
@@ -688,7 +750,6 @@ MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] grou
 		return MapChoicesNominateResult_InvalidMap;
 	}
 	
-	int mapData[mapdata_t];
 	int pos = FindMapInMapList(map, group);
 	
 	if (pos == -1)
@@ -697,10 +758,18 @@ MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] grou
 		return MapChoicesNominateResult_InvalidMap;
 	}
 	
+	int mapData[mapdata_t];
+	g_MapList.GetArray(pos, mapData, sizeof(mapData));
+	if (!CheckMapFilter(mapData[MapData_MapGroup], mapData[MapData_Map], mapData[MapData_MapAttributes], mapData[MapData_GroupAttributes]))
+	{
+		// Rejected by map filter
+		return MapChoicesNominateResult_Rejected;
+	}
+	
 	bool newMap = false;
 	int nominationsData[nominations_t];
 
-	int pos = FindMapInNominations(map, group);
+	pos = FindMapInNominations(map, group);
 	if (pos > -1)
 	{
 		g_Array_NominatedMaps.GetArray(pos, nominationsData, sizeof(nominationsData));
@@ -727,7 +796,5 @@ MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] grou
 	Call_PushCell(newMap);
 	Call_Finish();
 	
-	return MapChoicesNominateResult_Added;
-	
-	// TODO Finish this, possible changing the count to a list of nominators
+	return newMap ? MapChoicesNominateResult_Added : MapChoicesNominateResult_AlreadyInVote;
 }

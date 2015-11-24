@@ -596,7 +596,7 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 				if (!IsMapValid(pMapData[MapData_Map]))
 					continue;
 				
-				strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), "classic");
+				strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), MAPCHOICES_DEFAULTGROUP);
 				pMapData[MapData_MapAttributes] = null;
 				
 				files.PushArray(pMapData, sizeof(pMapData));
@@ -741,7 +741,7 @@ static bool ReadClassicMapFile(int[] pMapList)
 		
 		int pMapData[mapdata_t];
 		strcopy(pMapData[MapData_Map], sizeof(pMapData[MapData_Map]), buffer);
-		strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), "classic");
+		strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), MAPCHOICES_DEFAULTGROUP);
 		pMapData[MapData_MapAttributes] = null;
 		
 		pMapList[maplist_pArray].PushArray(pMapData);
@@ -788,7 +788,7 @@ static void DumpCache(ArrayList compat_list)
 	}
 }
 
-// native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
+// native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY);
 public int Native_ReadMapList(Handle plugin, int numParams)
 {
 	ArrayList pArray;
@@ -811,7 +811,7 @@ public int Native_ReadMapList(Handle plugin, int numParams)
 }
 
 // Internal function to call
-ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY, Handle plugin=null)
+ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY, Handle plugin=null)
 {
 	ArrayList pNewArray;
 	
@@ -823,7 +823,7 @@ ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] str="d
 	
 	/* Try to get the map list. */
 	// In C++, hndl is pArray... the array inside the Handle, but SourcePawn doesn't differentiate between them
-	if ((pNewArray = UpdateMapList(pArray, str, serial, flags, plugin)) == null)
+	if ((pNewArray = UpdateMapList(pArray, config, serial, flags, plugin)) == null)
 	{
 		return null;
 	}

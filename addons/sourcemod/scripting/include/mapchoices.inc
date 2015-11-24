@@ -38,9 +38,28 @@
 
 // Plugin 1.0 series
 
+#define MAPCHOICES_DEFAULTGROUP "classic"
+
 #define MAPCHOICES_NOCHANGE "__nochange__"
-#define MAX_GROUP_LENGTH 64
-#define MAX_MAP_ATTRIBUTES 16
+#define MAPCHOICES_MAX_GROUP_LENGTH 64
+#define MAPCHOICES_MAX_MAP_ATTRIBUTES 16
+
+/**
+ * What type of vote is this?
+ * 
+ * Map vote is the standard MapChooser-style vote.
+ * Group vote is just voting for the group, after which MapChoices will choose a valid map randomly
+ * Tiered vote is a group vote, followed by a map vote of qualifying maps.
+ * 
+ * As a general rule, you will want MapVote or TieredVote.
+ * This is configured in subplugins (such as mapchoices-mapend or mapchoices-rtv) when they start a vote.
+ */
+enum MapChoices_VoteType
+{
+	MapChoices_MapVote,
+	MapChoices_GroupVote,
+	MapChoices_TieredVote,
+}
 
 /**
  * Team list for score swapping.
@@ -72,9 +91,9 @@ enum MapChoices_MapListType
 enum MapChoices_NominateResult
 {
 	MapChoicesNominateResult_Added,				/**< The map was added */
+	MapChoicesNominateResult_AlreadyInVote,		/**< The map is already in the list, but now has an additional nominator */
 	MapChoicesNominateResult_Rejected,			/**< The map was rejected by a map filter */
-	MapChoicesNominateResult_InvalidMap,		/**< The map doesn't exist */
-	MapChoicesNominateResult_AlreadyInVote,		/**< The map is already in the list and you tried to constant nominate it */
+	MapChoicesNominateResult_InvalidMap,		/**< The map doesn't exist or wasn't in the map group */
 };
 
 /**
@@ -117,7 +136,7 @@ enum MapChoices_ConVarOverride
 enum mapdata_t
 {
 	String:MapData_Map[PLATFORM_MAX_PATH],
-	String:MapData_MapGroup[MAX_GROUP_LENGTH],
+	String:MapData_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH],
 	StringMap:MapData_MapAttributes,
 	StringMap:MapData_GroupAttributes,
 };
@@ -128,7 +147,7 @@ enum mapdata_t
 // "classic" will not actually exist, so don't bother looking for it
 enum groupdata_t
 {
-	String:GroupData_Group[MAX_GROUP_LENGTH],
+	String:GroupData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
 	StringMap:GroupData_GroupAttributes,
 }
 
@@ -173,7 +192,7 @@ enum groupdata_t
  *						the value will not be checked.  If the map list has since changed, 
  *						the serial is updated (even if -1 was passed).  If there is an error 
  *						finding a valid maplist, then the serial is set to -1.
- * @param str			Config name, or "default" for the default map list.  Config names 
+ * @param config			Config name, or "default" for the default map list.  Config names 
  *						should be somewhat descriptive.  For example, the admin menu uses 
  *						a config name of "admin menu".  The list names can be configured 
  *						by users in addons/sourcemod/configs/maplists.cfg.
@@ -191,7 +210,7 @@ enum groupdata_t
  *						least one item.  The serial number is updated to a positive number.
  * @error			Invalid array Handle that is not INVALID_HANDLE.
  */
-native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] str="default", int flags=MAPLIST_FLAG_CLEARARRAY);
+native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY);
 
 /**
  * Makes a compatibility binding for map lists.  For example, if a function previously used 
@@ -246,10 +265,10 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
  * 
  * @param map		Map to add.
  * @param owner	The person nominating the map. Use 0 for constant nominations.
- * @param group	The group of the map, defaults to "default"
+ * @param group	The group of the map, defaults to MAPCHOICES_DEFAULTGROUP
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner, const char[] group="default");
+native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner, const char[] group=MAPCHOICES_DEFAULTGROUP);
 
 /**
  * Attempt to remove a map from the MapChoices map list.
@@ -294,13 +313,18 @@ native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
  * Gets the current list of nominated maps.
  * 
  * Note: Returns copies of the array, updating these arrays do not change the originals.
- * 
- * @param maparray	An ADT array handle of mapdata_t arrays that store information about the nominated maps.
+ *					
+ * @return			An ADT array handle of mapdata_t arrays that store information about the nominated maps.
  * 					Remember to delete this ArrayList or call MapChoices_CloseMapList on it.
- * @param ownerarray	An optional ADT array handle to add the nominator client indexes to.
- * @noreturn
  */
-native void MapChoices_GetNominatedMapList(ArrayList maparray, ArrayList ownerarray=null);
+native ArrayList MapChoices_GetNominatedMapList();
+
+/**
+ * Get the list of nominators for a specific map
+ * 
+ * @return			An ADT array handle of client indexes or INVALID_HANDLE if the map isn't in the nominate list
+ */
+native ArrayList MapChoices_GetNominatedMapOwners(const char[] map, const char[] group=MAPCHOICES_DEFAULTGROUP);
 
 /**
  * Checks if MapChoices will allow a vote
@@ -315,14 +339,16 @@ typedef MapChoices_VoteFinished = function void ();
  * Start a map vote.
  * 
  * @param when			When should the map change?
- * @param mapList			An initial list of maps to use.  Will be supplemented by maps from the mapGroup if necessary.
+ * @param module			Which MapChoices module is holding the vote
+ * @param voteType		Which type of vote are we doing?  Note that TieredVote will be a minimum of two votes even without runoff votes.
+ * @param mapList			An initial list of items to use.  For map votes, will be supplemented by maps from the mapGroup if necessary.
  * @param mapGroup		Which mapgroup should we use?
  * @param finishedFunction	A function to run in the calling plugin after the vote finishes
  * 
  * TODO: Figure out if we really want module
  * TODO: Document what's in mapList as it's not just a flat list.
  */
-native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, ArrayList mapList=null, const char[] mapGroup="mapchoices", MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
+native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, MapChoices_VoteType voteType=MapChoices_MapVote, ArrayList itemList=null, const char[] mapGroup=MAPCHOICES_DEFAULTGROUP, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 
 
 // --------------------------------------------------------------------------------
@@ -423,6 +449,32 @@ typeset MapChoices_MapFilter
 	function Action (const char[] mapGroup, const char[] map);
 };
 
+typeset MapChoices_GroupFilter
+{
+	// Allow the named group to be played?
+	//
+	// Note: Any other plugin can deny the group before your plugin executes this, so do not
+	// expect to use this for statistical purposes
+	// 
+	// @param mapGroup	The group the map is in
+	// @param groupData	A Trie of keys and values for the selected group
+	// 
+	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+	///
+	function Action (const char[] mapGroup, StringMap groupData);
+	// Allow the named group to be played?
+	//
+	// Note: Any other plugin can deny the group before your plugin executes this, so do not
+	// expect to use this for statistical purposes
+	// 
+	// @param mapGroup	The group the map is in
+	// 
+	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+	///
+	function Action (const char[] mapGroup);
+}
+
+
 /**
  * Get a Trie of keys and values for a map.
  * This is the same trie that would be passed to a map filter.
@@ -443,6 +495,8 @@ native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, Strin
  * Register a map filter.  Map Filters are called when a map is selected to be added to
  * a map vote.
  * 
+ * Applies to Map and Tiered votes.
+ * 
  * @param filter	The map filtering function
  * 
  * @return 		true if the filter was added
@@ -457,6 +511,27 @@ native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
  * @return 		true if the filter was removed, false if it wasn't registered
  */
 native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
+
+/**
+ * Register a group filter.  Group filters are called when a group is selected to be added
+ * to a group vote.
+ * 
+ * Applies to Group and Tiered votes.
+ * 
+ * @param filter	The group filtering function
+ * 
+ * @return		true if the filter was added
+ */
+native bool MapChoices_RegisterGroupFilter(MapChoices_GroupFilter filter);
+
+/**
+ * Unregister a group filter.
+ * 
+ * @param filter	The group filtering function
+ * 
+ * @return		true if the filter was removed, false if it wasn't registered
+ */
+native bool MapChoices_UnregisterGroupFilter(MapChoices_GroupFilter filter);
 
 // --------------------------------------------------------------------------------
 // Functions used by Game plugins
@@ -490,7 +565,7 @@ native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
  * 
  * @return 	Bitflags of the gameflags currently set.
  */
-native int MapChoices_GetGameFlags();
+native MapChoices_GameFlags MapChoices_GetGameFlags();
 
 /**
  * Override one of the plugins cvars

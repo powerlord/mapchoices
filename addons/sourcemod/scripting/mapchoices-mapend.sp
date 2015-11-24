@@ -379,6 +379,7 @@ void StartVote()
 	}
 	
 	g_bVoteStarted = true;
+	// TODO: Add support for Group and Tiered votes.
 	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend", .finishedFunction=OnVoteFinished);
 }
 
