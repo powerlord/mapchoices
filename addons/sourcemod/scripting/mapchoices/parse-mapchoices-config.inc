@@ -491,7 +491,7 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 		int pNewMapData[mapdata_t];
 		
 		strcopy(pNewMapData[MapData_Map], sizeof(pNewMapData[MapData_Map]), pMapData[MapData_Map]);
-		strcopy(pNewMapData[MapData_MapGroup], sizeof(pNewMapData[MapData_MapGroup]), pMapData[MapData_MapGroup]);
+		strcopy(pNewMapData[MapData_Group], sizeof(pNewMapData[MapData_Group]), pMapData[MapData_Group]);
 		/* If attributes exist, we need to CloneHandle them to the other plugin */
 		if (pMapData[MapData_MapAttributes] != null)
 		{
@@ -533,7 +533,7 @@ void CopyMapDataArray(ArrayList mapData, ArrayList &newData, Handle plugin)
 		int pNewMapData[mapdata_t];
 		
 		strcopy(pNewMapData[MapData_Map], sizeof(pNewMapData[MapData_Map]), pMapData[MapData_Map]);
-		strcopy(pNewMapData[MapData_MapGroup], sizeof(pNewMapData[MapData_MapGroup]), pMapData[MapData_MapGroup]);
+		strcopy(pNewMapData[MapData_Group], sizeof(pNewMapData[MapData_Group]), pMapData[MapData_Group]);
 		/* If attributes exist, we need to CloneHandle them to the other plugin */
 		if (pMapData[MapData_MapAttributes] != null)
 		{
@@ -596,7 +596,7 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 				if (!IsMapValid(pMapData[MapData_Map]))
 					continue;
 				
-				strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), MAPCHOICES_DEFAULTGROUP);
+				strcopy(pMapData[MapData_Group], sizeof(pMapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
 				pMapData[MapData_MapAttributes] = null;
 				
 				files.PushArray(pMapData, sizeof(pMapData));
@@ -741,7 +741,7 @@ static bool ReadClassicMapFile(int[] pMapList)
 		
 		int pMapData[mapdata_t];
 		strcopy(pMapData[MapData_Map], sizeof(pMapData[MapData_Map]), buffer);
-		strcopy(pMapData[MapData_MapGroup], sizeof(pMapData[MapData_MapGroup]), MAPCHOICES_DEFAULTGROUP);
+		strcopy(pMapData[MapData_Group], sizeof(pMapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
 		pMapData[MapData_MapAttributes] = null;
 		
 		pMapList[maplist_pArray].PushArray(pMapData);

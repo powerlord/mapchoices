@@ -379,12 +379,18 @@ void StartVote()
 	}
 	
 	g_bVoteStarted = true;
+	
 	// TODO: Add support for Group and Tiered votes.
-	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend", .finishedFunction=OnVoteFinished);
+
+	ArrayList maps = new ArrayList(mapdata_t);
+	// TODO: Get a list of maps to send to MapChoices
+	
+	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, maps, "mapchoices-mapend", .finishedFunction=OnVoteFinished);
 }
 
-public void OnVoteFinished()
+public void OnVoteFinished(MapChoices_VoteType voteType)
 {
+	// TODO: Add support for Group and Tiered votes.
 	g_bVoteFinished = true;
 }
 

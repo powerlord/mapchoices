@@ -132,7 +132,7 @@ public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, 
 	{
 		ResetMapData(m_MapData);
 		
-		strcopy(m_MapData[MapData_MapGroup], sizeof(m_MapData[MapData_MapGroup]), m_GroupData[GroupData_Group]);		
+		strcopy(m_MapData[MapData_Group], sizeof(m_MapData[MapData_Group]), m_GroupData[GroupData_Group]);		
 		strcopy(m_MapData[MapData_Map], sizeof(m_MapData[MapData_Map]), name);
 		
 		m_CurAdvState = ADV_MPS_MAP;
@@ -222,7 +222,7 @@ public void ParseAdvancedList_ParseEnd(SMCParser smc, bool halted, bool failed)
 stock void ResetMapData(int mapData[mapdata_t])
 {
 	mapData[MapData_Map][0] = '\0';
-	mapData[MapData_MapGroup][0] = '\0';
+	mapData[MapData_Group][0] = '\0';
 	delete mapData[MapData_MapAttributes];
 	mapData[MapData_MapAttributes] = null;
 }
@@ -237,7 +237,7 @@ stock void ResetGroupData(int groupData[groupdata_t])
 stock void CopyMapData(int source[mapdata_t], int target[mapdata_t])
 {
 	strcopy(target[MapData_Map], sizeof(target[MapData_Map]), source[MapData_Map]);
-	strcopy(target[MapData_MapGroup], sizeof(target[MapData_MapGroup]), source[MapData_MapGroup]);
+	strcopy(target[MapData_Group], sizeof(target[MapData_Group]), source[MapData_Group]);
 	target[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(source[MapData_MapAttributes]));
 }
 

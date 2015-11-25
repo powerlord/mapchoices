@@ -123,7 +123,7 @@ public void OnAllPluginsLoaded()
 	MapChoices_AddGameFlags(MapChoicesGame_OverrideRoundEnd);
 	MapChoices_OverrideConVar(MapChoicesConVar_BonusTime, g_Cvar_Bonusroundtime);
 	
-	MapChoices_AddChangeMapHandler(CSGO_ChangeMap);
+	MapChoices_RegisterChangeMapHandler(CSGO_ChangeMap);
 }
 
 public void OnLibraryAdded(const char[] name)
@@ -145,7 +145,7 @@ public void OnLibraryRemoved(const char[] name)
 public void OnPluginEnd()
 {
 	MapChoices_RemoveGameFlags(MapChoicesGame_OverrideRoundEnd);
-	MapChoices_RemoveChangeMapHandler(CSGO_ChangeMap);	
+	MapChoices_UnregisterChangeMapHandler(CSGO_ChangeMap);	
 	MapChoices_ResetConVar(MapChoicesConVar_BonusTime);
 }
 
@@ -223,7 +223,7 @@ void CheckMaxRounds(int roundCount)
 {
 	if (g_Cvar_Maxrounds.IntValue && roundCount >= g_Cvar_Maxrounds.IntValue - MapChoices_MapEnd_GetStartRounds())
 	{
-		MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+		MapChoices_MapEnd_StartVote();
 	}
 }
 
@@ -236,7 +236,7 @@ void CheckWinLimit(int winner_score)
 		{			
 			if (winner_score >= (winlimit - MapChoices_MapEnd_GetStartRounds()))
 			{
-				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+				MapChoices_MapEnd_StartVote();
 			}
 		}
 	}
@@ -251,7 +251,7 @@ void CheckWinLimit(int winner_score)
 			
 			if(winner_score == winlimit - 1)
 			{
-				MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, "mapchoices-mapend");
+				MapChoices_MapEnd_StartVote();
 			}
 		}
 	}

@@ -81,6 +81,9 @@ native void MapChoices_MapEnd_SwapTeamScores(MapChoices_Team team1=MapChoices_Te
  */
 native void MapChoices_MapEnd_ProcessRoundEnd(MapChoices_Team winner, int score=-1);
 
+
+native bool MapChoices_MapEnd_StartVote();
+
 // --------------------------------------------------------------------------------
 // Standard plugin stuff
 

@@ -92,7 +92,6 @@ enum MapChoices_NominateResult
 {
 	MapChoicesNominateResult_Added,				/**< The map was added */
 	MapChoicesNominateResult_AlreadyInVote,		/**< The map is already in the list, but now has an additional nominator */
-	MapChoicesNominateResult_Rejected,			/**< The map was rejected by a map filter */
 	MapChoicesNominateResult_InvalidMap,		/**< The map doesn't exist or wasn't in the map group */
 };
 
@@ -131,20 +130,22 @@ enum MapChoices_ConVarOverride
 
 // SM 1.6-style enum because it's an enum-struct
 // Used to store data about a map.
-// Classic mode maplists will have the group set to "classic" and null MapAttributes (to save a Handle)
+// Classic mode maplists will have the group set to MAPCHOICES_DEFAULTGROUP and null MapAttributes (to save a Handle)
 // Other uses may intentionally pass null handles for map and group attributes
+// MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
 enum mapdata_t
 {
 	String:MapData_Map[PLATFORM_MAX_PATH],
-	String:MapData_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH],
+	String:MapData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
 	StringMap:MapData_MapAttributes,
 	StringMap:MapData_GroupAttributes,
 };
 
 
-// 1.6-style enum to store group data
+// SM 1.6-style enum because it's an enum-struct
+// Used to store data about a group
 // Note that the StringMap may be null if there were no attributes
-// "classic" will not actually exist, so don't bother looking for it
+// MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
 enum groupdata_t
 {
 	String:GroupData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
@@ -154,8 +155,11 @@ enum groupdata_t
 /**
  * This is the MapChoices equivalent to SourceMod's ReadMapList.
  * 
+ * Note: If you're calling this, you should be calling MapChoices_CheckMapFilter
+ * and MapChoices_CheckGroupFilter when you do things with maps.
+ * 
  * Loads a map list to an ADT Array.
- * The ADT Array containts arrays of mapdata_t enum structures.
+ * The ADT Array contains mapdata_t structures.
  *
  * A map list is a list of maps from a file.  SourceMod allows easy configuration of 
  * maplists through addons/sourcemod/configs/mapchoices.cfg.  Each entry is given a 
@@ -210,7 +214,7 @@ enum groupdata_t
  *						least one item.  The serial number is updated to a positive number.
  * @error			Invalid array Handle that is not INVALID_HANDLE.
  */
-native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY);
+native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=-1, const char[] config="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
 /**
  * Makes a compatibility binding for map lists.  For example, if a function previously used 
@@ -293,23 +297,6 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const c
 //native bool MapChoices_RemoveNominationByOwner(int client);
 
 /**
- * Get the group for the current map.
- * 
- * @param group		A string to copy the name into
- * @param maxlength	The length of the string.
- */
-native void MapChoices_GetCurrentMapGroup(char[] group, int maxlength);
-
-// Check if this is possible with new architecture
-/**
- * Gets the current list of excluded maps.
- * 
- * @param array	An ADT array handle to add the map strings to.
- * @noreturn
- */
-//native void MapChoices_GetExcludedMapList(ArrayList array);
-
-/**
  * Gets the current list of nominated maps.
  * 
  * Note: Returns copies of the array, updating these arrays do not change the originals.
@@ -326,6 +313,38 @@ native ArrayList MapChoices_GetNominatedMapList();
  */
 native ArrayList MapChoices_GetNominatedMapOwners(const char[] group, const char[] map);
 
+// Check if this is possible with new architecture
+/**
+ * Gets the current list of excluded maps.
+ * 
+ * @param array	An ADT array handle to add the map strings to.
+ * @noreturn
+ */
+//native void MapChoices_GetExcludedMapList(ArrayList array);
+
+/**
+ * Get the group for the current map.
+ * 
+ * @param group		A string to copy the name into
+ * @param maxlength	The length of the string.
+ */
+native void MapChoices_GetCurrentMapGroup(char[] group, int maxlength);
+
+/**
+ * Get a Trie of keys and values for a map and map group.
+ * This is the same trie that would be passed to a map filter.
+ * 
+ * NOTE: This function may yet be removed in favor of MapFilters only
+ * 
+ * @param group	The mapGroup for the map whose data you want
+ * @param map			The map whose data you want
+ * @param mapData		On success, a mapdata_t with the map's data
+ * 
+ * @return			true if we have data for a map, false otherwise
+ * @error			if data is INVALID_HANDLE
+ */
+native bool MapChoices_GetMapData(const char[] group, const char[] map, int mapData[mapdata_t]);
+
 /**
  * Checks if MapChoices will allow a vote
  * 
@@ -333,22 +352,22 @@ native ArrayList MapChoices_GetNominatedMapOwners(const char[] group, const char
  */
 native bool MapChoices_CanStartVote();
 
-typedef MapChoices_VoteFinished = function void ();
+typedef MapChoices_VoteFinished = function void (MapChoices_VoteType voteType);
 
 /**
  * Start a map vote.
  * 
  * @param when			When should the map change?
+ * @param itemList		An initial list of items to use.
  * @param module			Which MapChoices module is holding the vote
  * @param voteType		Which type of vote are we doing?  Note that TieredVote will be a minimum of two votes even without runoff votes.
- * @param mapList			An initial list of items to use.  For map votes, will be supplemented by maps from the mapGroup if necessary.
- * @param mapGroup		Which mapgroup should we use?
  * @param finishedFunction	A function to run in the calling plugin after the vote finishes
  * 
  * TODO: Figure out if we really want module
  * TODO: Document what's in mapList as it's not just a flat list.
  */
-native void MapChoices_InitiateVote(MapChoices_MapChange when, const char[] module, MapChoices_VoteType voteType=MapChoices_MapVote, ArrayList itemList=null, const char[] mapGroup=MAPCHOICES_DEFAULTGROUP, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
+native void MapChoices_InitiateVote(MapChoices_MapChange when, ArrayList itemList, const char[] module,
+	MapChoices_VoteType voteType = MapChoices_MapVote, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 
 
 // --------------------------------------------------------------------------------
@@ -421,75 +440,29 @@ native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
 // --------------------------------------------------------------------------------
 // Functions used by Map Filter plugins
 
-typeset MapChoices_MapFilter
-{
-	// Allow the named map to be played?
-	//
-	// Note: Any other plugin can deny the map before your plugin executes this, so do not
-	// expect to use this for statistical purposes
-	// 
-	// @param group	The group the map is in
-	// @param map			The map name from a map list
-	// @param groupData	A Trie of keys and values for the selected group
-	// @param mapData		A Trie of keys and values for the selected map
-	// 
-	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
-	///
-	function Action (const char[] group, const char[] map, StringMap groupData, StringMap mapData);
-	// Allow the named map to be played?
-	//
-	// Note: Any other plugin can deny the map before your plugin executes this, so do not
-	// expect to use this for statistical purposes
-	// 
-	// @param group	The group the map is in
-	// @param map			The map name from a map list
-	// 
-	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
-	///
-	function Action (const char[] group, const char[] map);
-};
-
-typeset MapChoices_GroupFilter
-{
-	// Allow the named group to be played?
-	//
-	// Note: Any other plugin can deny the group before your plugin executes this, so do not
-	// expect to use this for statistical purposes
-	// 
-	// @param group	The group the map is in
-	// @param groupData	A Trie of keys and values for the selected group
-	// 
-	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
-	///
-	function Action (const char[] group, StringMap groupData);
-	// Allow the named group to be played?
-	//
-	// Note: Any other plugin can deny the group before your plugin executes this, so do not
-	// expect to use this for statistical purposes
-	// 
-	// @param group	The group the map is in
-	// 
-	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
-	///
-	function Action (const char[] group);
-}
-
+/**
+ * Allow the named map to be played?
+ * 
+ * Note: Any other plugin can deny the map before your plugin executes this, so do not
+ * expect to use this for statistical purposes
+ * 
+ * @param mapData		Map Data.  See mapdata_t for details.
+ * 
+ * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+ */
+typedef MapChoices_MapFilter = function Action (const int mapData[mapdata_t]);
 
 /**
- * Get a Trie of keys and values for a map.
- * This is the same trie that would be passed to a map filter.
+ * Allow the named group to be played?
+ *
+ * Note: Any other plugin can deny the group before your plugin executes this, so do not
+ * expect to use this for statistical purposes
  * 
- * NOTE: This function may yet be removed in favor of MapFilters only
+ * @param groupData	Group data.  See groupdata_t for details.
  * 
- * @param group	The mapGroup for the map whose data you want
- * @param map			The map whose data you want
- * @param mapData		A Trie Handle to store map keys and values
- * @param groupData	A Trie Handle to store map group keys and values
- * 
- * @return			true if we have data for a map, false otherwise
- * @error			if data is INVALID_HANDLE
+ * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
  */
-native bool MapChoices_GetMapData(const char[] group, const char[] map, StringMap mapdata, StringMap groupData=null);
+typedef MapChoices_GroupFilter = function Action (const int groupData[groupdata_t]);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
@@ -533,6 +506,24 @@ native bool MapChoices_RegisterGroupFilter(MapChoices_GroupFilter filter);
  */
 native bool MapChoices_UnregisterGroupFilter(MapChoices_GroupFilter filter);
 
+/**
+ * From a subplugin, check if a map matches a map filter
+ * 
+ * @param mapData		A map's map data
+ * 
+ * @return			true if a filter blocked the map, false otherwise
+ */
+native bool MapChoices_CheckMapFilter(const int mapData[mapdata_t]);
+
+/**
+ * From a subplugin, check if a group matches a group filter
+ * 
+ * @param groupData	Group data.  See groupdata_t for details.
+ * 
+ * @return			true if a filter blocked the group, false otherwise
+ */
+native bool MapChoices_CheckGroupFilter(const int groupData[groupdata_t]);
+
 // --------------------------------------------------------------------------------
 // Functions used by Game plugins
 
@@ -549,16 +540,16 @@ native bool MapChoices_WillChangeAtRoundEnd();
  */
 typedef MapChoices_ChangeMapForward = function Action (const char[] map, bool isRoundEnd);
 
-native bool MapChoices_AddChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
-native bool MapChoices_RemoveChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
+native bool MapChoices_RegisterChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
+native bool MapChoices_UnregisterChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 
 /**
  * Set game flags.
  * 
  * This enables/disables various parts of MapChoices on a per-game basis.
  */
-native bool MapChoices_AddGameFlags(MapChoices_GameFlags flags);
-native bool MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
+native void MapChoices_AddGameFlags(MapChoices_GameFlags flags);
+native void MapChoices_RemoveGameFlags(MapChoices_GameFlags flags);
 
 /**
  * Get the bitflags of which game flags are enable.
@@ -618,10 +609,41 @@ public SharedPlugin __pl_mapchoices =
 #if !defined REQUIRE_PLUGIN
 public void __pl_mapchoices_SetNTVOptional()
 {
+	MarkNativeAsOptional("MapChoices_ReadMapList");
+	MarkNativeAsOptional("MapChoices_SetMapListCompatBind");
+	
+	MarkNativeAsOptional("MapChoices_Nominate");
+	//MarkNativeAsOptional("MapChoices_RemoveNominationByMap");
+	//MarkNativeAsOptional("MapChoices_RemoveNominationByOwner");
+	MarkNativeAsOptional("MapChoices_GetNominatedMapList");
+	MarkNativeAsOptional("MapChoices_GetNominatedMapOwners");
+	
+	//MarkNativeAsOptional("MapChoices_GetExcludedMapList");
+	
+	MarkNativeAsOptional("MapChoices_GetCurrentMapGroup");
+	MarkNativeAsOptional("MapChoices_GetMapData");
+	MarkNativeAsOptional("MapChoices_CanStartVote");
+	MarkNativeAsOptional("MapChoices_InitiateVote");
+	
 	MarkNativeAsOptional("MapChoices_RegisterVoteHandler");
 	MarkNativeAsOptional("MapChoices_UnregisterVoteHandler");
+	
 	MarkNativeAsOptional("MapChoices_RegisterMapFilter");
 	MarkNativeAsOptional("MapChoices_UnregisterMapFilter");
+	MarkNativeAsOptional("MapChoices_RegisterGroupFilter");
+	MarkNativeAsOptional("MapChoices_UnregisterGroupFilter");
+	MarkNativeAsOptional("MapChoices_CheckMapFilter");
+	MarkNativeAsOptional("MapChoices_CheckGroupFilter");
 	
+	MarkNativeAsOptional("MapChoices_WillChangeAtRoundEnd");
+	MarkNativeAsOptional("MapChoices_RegisterChangeMapHandler");
+	MarkNativeAsOptional("MapChoices_UnregisterChangeMapHandler");
+	
+	MarkNativeAsOptional("MapChoices_AddGameFlags");
+	MarkNativeAsOptional("MapChoices_RemoveGameFlags");
+	MarkNativeAsOptional("MapChoices_GetGameFlags");
+	MarkNativeAsOptional("MapChoices_OverrideConVar");
+	MarkNativeAsOptional("MapChoices_ResetConVar");
+	MarkNativeAsOptional("MapChoices_GetConVarOverride");
 }
 #endif
