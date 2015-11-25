@@ -209,18 +209,16 @@ public void OnMapStart()
 public void OnClientDisconnect(int client)
 {
 	// Clear the client's nominations
-	
-	if (g_MapNominations[client][NominationsData_Map][0] != '\0')
-	{
-		RemoveMapFromNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_MapGroup], client);
-		
-		g_MapNominations[client][NominationsData_Map][0] = '\0';
-		g_MapNominations[client][NominationsData_MapGroup][0] = '\0';
-	}
+	RemoveClientMapNomination(client);
 }
 
-int FindMapInNominations(const char[] map, const char group[]=MAPCHOICES_DEFAULTGROUP)
+int FindMapInNominations(const char[] group, const char[] map)
 {
+	if (strlen(group) <= 0 || strlen(map) <= 0)
+	{
+		return -1;
+	}
+	
 	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
 	{
 		int nominationsData[nominations_t];
@@ -235,9 +233,14 @@ int FindMapInNominations(const char[] map, const char group[]=MAPCHOICES_DEFAULT
 	return -1;
 }
 
-bool RemoveMapFromNominations(const char[] map, const char group[]=MAPCHOICES_DEFAULTGROUP, int client = 0)
+bool RemoveMapFromNominations(const char[] group, const char[] map, int client = 0)
 {
-	int location = FindMapInNominations(map, group);
+	if (strlen(group) <= 0 || strlen(map) <= 0)
+	{
+		return false;
+	}
+	
+	int location = FindMapInNominations(group, map);
 	if (location > -1)
 	{
 		bool removed = false;
@@ -274,8 +277,23 @@ bool RemoveMapFromNominations(const char[] map, const char group[]=MAPCHOICES_DE
 	return false;
 }
 
-int FindMapInMapList(const char[] map, const char[] group=MAPCHOICES_DEFAULTGROUP)
+bool RemoveClientMapNomination(int client)
 {
+	if (g_MapNominations[client][NominationsData_Map][0] != '\0' && g_MapNominations[client][NominationsData_MapGroup][0] != '\0')
+	{
+		RemoveMapFromNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_MapGroup], client);
+	}
+	g_MapNominations[client][NominationsData_Map][0] = '\0';
+	g_MapNominations[client][NominationsData_MapGroup][0] = '\0';
+}
+
+int FindMapInMapList(const char[] group, const char[] map)
+{
+	if (strlen(group) <= 0 || strlen(map) <= 0)
+	{
+		return -1;
+	}
+	
 	for (int i = 0; i < g_MapList.Length; i++)
 	{
 		int mapData[mapdata_t];
@@ -353,14 +371,19 @@ bool Core_IsVoteInProgress()
 	return IsVoteInProgress();
 }
 
-bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData)
+bool CheckMapFilter(const char[] group, const char[] map, StringMap groupData, StringMap mapData)
 {
+	if (strlen(group) <= 0 || strlen(map) <= 0)
+	{
+		return false;
+	}
+	
 	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_MapFilter);
-	Call_PushString(mapGroup);
+	Call_PushString(group);
 	Call_PushString(map);
-	Call_PushCell(mapData);
 	Call_PushCell(groupData);
+	Call_PushCell(mapData);
 	Call_Finish(result);
 	if (result >= Plugin_Handled)
 	{
@@ -370,11 +393,16 @@ bool CheckMapFilter(const char[] mapGroup, const char[] map, StringMap mapData, 
 	return true;
 }
 
-bool CheckGroupFilter(const char[] mapGroup, StringMap groupData)
+bool CheckGroupFilter(const char[] group, StringMap groupData)
 {
+	if (strlen(group) <= 0)
+	{
+		return false;
+	}
+	
 	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_GroupFilter);
-	Call_PushString(mapGroup);
+	Call_PushString(group);
 	Call_PushCell(groupData);
 	Call_Finish(result);
 	if (result >= Plugin_Handled)
@@ -546,8 +574,10 @@ public int Native_RemoveGroupFilter(Handle plugin, int numParams)
 
 public int Native_StartVote(Handle plugin, int numParams)
 {
+	// TODO: Fix this to handle Group and Tier votes
+	
 	MapChoices_MapChange when = GetNativeCell(1);
-	ArrayList mapList = view_as<ArrayList>(GetNativeCell(2));
+	ArrayList mapList = view_as<ArrayList>(GetNativeCell(4));
 	
 	StartVote(when, mapList);
 }
@@ -660,15 +690,10 @@ public int Native_GetConVarOverride(Handle plugin, int numParams)
 	return view_as<int>(out);
 }
 
-// native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
+// native void MapChoices_GetCurrentMapGroup(char[] group, int maxlength);
 public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
 {
-	int maxlength = GetNativeCell(2);
-	
-	char[] outString = new char[maxlength];
-	strcopy(outString, maxlength, g_MapGroup);
-	
-	SetNativeString(1, outString, maxlength);
+	SetNativeString(1, g_MapGroup, GetNativeCell(2));
 }
 
 public int Native_GetNominatedMapList(Handle plugin, int numParams)
@@ -694,14 +719,14 @@ public int Native_GetNominatedMapOwners(Handle plugin, int numParams)
 {
 	int stringLength;
 	GetNativeStringLength(1, stringLength);
-	char[] map = new char[stringLength + 1];
-	GetNativeString(1, map, stringLength + 1);
-	
-	GetNativeStringLength(2, stringLength);
 	char[] group = new char[stringLength + 1];
-	GetNativeString(2, group, stringLength + 1);
+	GetNativeString(1, group, stringLength + 1);
+
+	GetNativeStringLength(2, stringLength);
+	char[] map = new char[stringLength + 1];
+	GetNativeString(2, map, stringLength + 1);
 	
-	int pos = FindMapInNominations(map, group);
+	int pos = FindMapInNominations(group, map);
 	
 	if (pos == -1)
 		return view_as<int>(INVALID_HANDLE);
@@ -726,31 +751,31 @@ public int Native_Nominate(Handle plugin, int numParams)
 	int mapLength;
 	int groupLength;
 
-	GetNativeStringLength(1, mapLength);
-	GetNativeStringLength(3, groupLength);
+	GetNativeStringLength(1, groupLength);
+	GetNativeStringLength(2, mapLength);
 	
 	if (mapLength <= 0 || groupLength <= 0)
 	{
 		return false;
 	}
 	
-	char[] map = new char[mapLength+1];
-	GetNativeString(1, map, mapLength+1);
-	
 	char[] group = new char[groupLength+1];
-	GetNativeString(3, group, groupLength+1);
+	GetNativeString(1, group, groupLength+1);
 	
-	return view_as<int>(InternalNominateMap(map, GetNativeCell(2), group));
+	char[] map = new char[mapLength+1];
+	GetNativeString(2, map, mapLength+1);
+	
+	return view_as<int>(InternalNominateMap(group, map, GetNativeCell(3)));
 }
 
-MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] group)
+MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owner)
 {
 	if (!IsMapValid(map))
 	{
 		return MapChoicesNominateResult_InvalidMap;
 	}
 	
-	int pos = FindMapInMapList(map, group);
+	int pos = FindMapInMapList(group, map);
 	
 	if (pos == -1)
 	{
@@ -765,11 +790,13 @@ MapChoices_NominateResult InternalNominateMap(char[] map, int owner, char[] grou
 		// Rejected by map filter
 		return MapChoicesNominateResult_Rejected;
 	}
+
+	RemoveClientMapNomination(owner);
 	
 	bool newMap = false;
 	int nominationsData[nominations_t];
 
-	pos = FindMapInNominations(map, group);
+	pos = FindMapInNominations(group, map);
 	if (pos > -1)
 	{
 		g_Array_NominatedMaps.GetArray(pos, nominationsData, sizeof(nominationsData));

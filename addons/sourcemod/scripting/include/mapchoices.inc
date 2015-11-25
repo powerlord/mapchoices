@@ -224,7 +224,7 @@ native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const c
  * @param mapListType		Which map list type this is.
  * @noreturn
  */
-native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType:mapListType=MapChoicesMapList_Classic);
+native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType mapListType = MapChoicesMapList_Classic);
 
 /**
  * Clean up a map list ArrayList
@@ -268,7 +268,7 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
  * @param group	The group of the map, defaults to MAPCHOICES_DEFAULTGROUP
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner, const char[] group=MAPCHOICES_DEFAULTGROUP);
+native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const char[] map, int owner);
 
 /**
  * Attempt to remove a map from the MapChoices map list.
@@ -295,10 +295,10 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] map, int owner
 /**
  * Get the group for the current map.
  * 
- * @param mapGroup	A string to copy the name into
+ * @param group		A string to copy the name into
  * @param maxlength	The length of the string.
  */
-native void MapChoices_GetCurrentMapGroup(char[] mapGroup, int maxlength);
+native void MapChoices_GetCurrentMapGroup(char[] group, int maxlength);
 
 // Check if this is possible with new architecture
 /**
@@ -324,7 +324,7 @@ native ArrayList MapChoices_GetNominatedMapList();
  * 
  * @return			An ADT array handle of client indexes or INVALID_HANDLE if the map isn't in the nominate list
  */
-native ArrayList MapChoices_GetNominatedMapOwners(const char[] map, const char[] group=MAPCHOICES_DEFAULTGROUP);
+native ArrayList MapChoices_GetNominatedMapOwners(const char[] group, const char[] map);
 
 /**
  * Checks if MapChoices will allow a vote
@@ -374,7 +374,7 @@ forward void MapChoices_OnMapVoteStarted(bool runoff);
  * @param group	If the map was part of a group, which group it was from.
  * @noreturn
  */
-forward void MapChoices_OnMapVoteEnded(const char[] map, const char[] group, bool instant);
+forward void MapChoices_OnMapVoteEnded(const char[] group, const char[] map, bool instant);
 
 /**
  * A map was added to the nominations list.
@@ -385,7 +385,7 @@ forward void MapChoices_OnMapVoteEnded(const char[] map, const char[] group, boo
  * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
  * @param newMap	True if the map was added to the nominations list for the first time, false if it was already nominated
  */
-forward void MapChoices_OnNominationAdded(const char[] map, const char[] group, int owner, bool newMap);
+forward void MapChoices_OnNominationAdded(const char[] group, const char[] map, int owner, bool newMap);
 
 /**
  * A map has been removed from the nominations list.
@@ -394,7 +394,7 @@ forward void MapChoices_OnNominationAdded(const char[] map, const char[] group, 
  * @param owner	The user that added the map.
  * @param removed	True if this map was removed entirely, false if there are still nominations for it.
  */
-forward void MapChoices_OnNominationRemoved(const char[] map, const char[] group, int owner, bool removed);
+forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map, int owner, bool removed);
 
 // --------------------------------------------------------------------------------
 // Functions used by Vote System plugins (read: NativeVotes)
@@ -428,25 +428,25 @@ typeset MapChoices_MapFilter
 	// Note: Any other plugin can deny the map before your plugin executes this, so do not
 	// expect to use this for statistical purposes
 	// 
-	// @param mapGroup	The group the map is in
+	// @param group	The group the map is in
 	// @param map			The map name from a map list
-	// @param mapData		A Trie of keys and values for the selected map
 	// @param groupData	A Trie of keys and values for the selected group
+	// @param mapData		A Trie of keys and values for the selected map
 	// 
 	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
 	///
-	function Action (const char[] mapGroup, const char[] map, StringMap mapData, StringMap groupData);
+	function Action (const char[] group, const char[] map, StringMap groupData, StringMap mapData);
 	// Allow the named map to be played?
 	//
 	// Note: Any other plugin can deny the map before your plugin executes this, so do not
 	// expect to use this for statistical purposes
 	// 
-	// @param mapGroup	The group the map is in
+	// @param group	The group the map is in
 	// @param map			The map name from a map list
 	// 
 	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
 	///
-	function Action (const char[] mapGroup, const char[] map);
+	function Action (const char[] group, const char[] map);
 };
 
 typeset MapChoices_GroupFilter
@@ -456,22 +456,22 @@ typeset MapChoices_GroupFilter
 	// Note: Any other plugin can deny the group before your plugin executes this, so do not
 	// expect to use this for statistical purposes
 	// 
-	// @param mapGroup	The group the map is in
+	// @param group	The group the map is in
 	// @param groupData	A Trie of keys and values for the selected group
 	// 
 	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
 	///
-	function Action (const char[] mapGroup, StringMap groupData);
+	function Action (const char[] group, StringMap groupData);
 	// Allow the named group to be played?
 	//
 	// Note: Any other plugin can deny the group before your plugin executes this, so do not
 	// expect to use this for statistical purposes
 	// 
-	// @param mapGroup	The group the map is in
+	// @param group	The group the map is in
 	// 
 	// @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
 	///
-	function Action (const char[] mapGroup);
+	function Action (const char[] group);
 }
 
 
@@ -481,7 +481,7 @@ typeset MapChoices_GroupFilter
  * 
  * NOTE: This function may yet be removed in favor of MapFilters only
  * 
- * @param mapGroup	The mapGroup for the map whose data you want
+ * @param group	The mapGroup for the map whose data you want
  * @param map			The map whose data you want
  * @param mapData		A Trie Handle to store map keys and values
  * @param groupData	A Trie Handle to store map group keys and values
@@ -489,7 +489,7 @@ typeset MapChoices_GroupFilter
  * @return			true if we have data for a map, false otherwise
  * @error			if data is INVALID_HANDLE
  */
-native bool MapChoices_GetMapData(const char[] mapGroup, const char[] map, StringMap mapdata, StringMap groupData=null);
+native bool MapChoices_GetMapData(const char[] group, const char[] map, StringMap mapdata, StringMap groupData=null);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
