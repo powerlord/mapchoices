@@ -40,7 +40,9 @@
 
 #define MAPCHOICES_DEFAULTGROUP "classic"
 
+#define MAPCHOICES_EXTEND "__extend__"
 #define MAPCHOICES_NOCHANGE "__nochange__"
+
 #define MAPCHOICES_MAX_GROUP_LENGTH 64
 #define MAPCHOICES_MAX_MAP_ATTRIBUTES 16
 
@@ -59,6 +61,13 @@ enum MapChoices_VoteType
 	MapChoices_MapVote,
 	MapChoices_GroupVote,
 	MapChoices_TieredVote,
+}
+
+enum MapChoices_VoteFailedType
+{
+	MapChoices_Canceled,						/**< The vote was canceled */
+	MapChoices_FailedQuorum,					/**< Depending on configuration, a revote may follow */
+	MapChoices_FailedNoVotes,					/**< No one voted */
 }
 
 /**
@@ -420,9 +429,60 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
 
 // Private forwards for vote managers
 
-typedef MapChoices_HandlerStartVote = function Action (int duration, ArrayList mapList, int[] clients, int numClients, bool runoff);
+/**
+ * Tells a vote system plugin to start a vote.
+ * 
+ * @param duration	How long should the vote last?
+ * @param voteType	Which vote type is this: Map or Group?
+ * @param itemList	A flat ArrayList of items.
+ * @param clients		Which clients is this vote being sent to?
+ * @param numClients	How many clients is this being sent to?
+ * @param quorum		What percent of votes (0.0 to 1.0) are needed for the vote to pass? 0.0 will tell the plugin to always pass.
+ * 
+ * @return			Plugin_Handled to indicate that a vote system handled this vote start
+ */
+typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum);
+
+/**
+ * Tells a vote system plugin to cancel a vote
+ * 
+ * @return			Plugin_Handled to indicate that a vote system handled this vote cancel
+ */
 typedef MapChoices_HandlerCancelVote = function Action ();
+
+/**
+ * Ask a vote system plugin whether it has a vote currently in progress
+ * 
+ * @param isInProgress		The plugin will set this to yet or no depending on whether a vote is in progress
+ * 
+ * @return			Plugin_Handled to indicate that a vote system handled this vote inprogress check
+ */
 typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
+
+/**
+ * A Vote System plugin passed a vote.
+ * 
+ * @param voteType		The type of vote completed: Map or Group.
+ * @param item			The item that won the vote.
+ * 
+ * @error if MapChoices isn't running a vote at the time.
+ */
+native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, const char[] item);
+
+/**
+ * A Vote System plugin failed a vote.
+ * 
+ * Note: If MapChoices issues a CancelVote, expect to get a VoteCompleted back with a Canceled reason.
+ * 
+ * @param voteType		The type of vote completed: Map or Group.
+ * @param failType		Why did the vote fail?
+ * @param itemCount		0 if the vote was canceled, otherwise how many items got votes / are there.
+ * @param items			If failedType is MapChoices_FailedQuorum or MapChoices_FailedNoVote, an array of items.
+ * @param votes			If failedType is MapChoices_FailedQuorum, an array with the number of votes for each item.
+ * 
+ * @error if MapChoices isn't running a vote at the time.
+ */
+native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteFailedType failType, int itemCount, const char[] items, const int[] votes);
 
 /**
  * Override the main vote system with a different one.
