@@ -44,8 +44,9 @@
 ConVar g_Cvar_Enabled;
 
 bool g_VoteInProgress;
-
 float g_Quorum = 0.0;
+MapChoices_VoteType g_VoteType = MapChoices_MapVote;
+bool g_NoVotesSelect = false;
 
 public Plugin myinfo = {
 	name			= "MapChoices NativeVotes",
@@ -81,19 +82,22 @@ public void OnPluginEnd()
 	MapChoices_UnregisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress);
 }
 
-public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum)
+public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum, bool noVotesSelect, bool noVoteOption)
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 	
+	// We are naively assuming that NativeVotes_IsVoteInProgress was checked before our handler was called
+
 	g_VoteInProgress = true;
 	g_Quorum = quorum;
-	
-	//TODO Implement this logic
+	g_VoteType = voteType;
+	g_NoVotesSelect = noVotesSelect;
 	
 	// This is never MapChoices_TieredVote as that's handled by the parent plugin
+	
 	NativeVote vote;
 	if (voteType == MapChoices_MapVote)
 	{
@@ -101,7 +105,7 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	}
 	else
 	{
-		vote = new NativeVote(Handler_GroupVote, NativeVotesType_Custom_Mult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_Display);
+		vote = new NativeVote(Handler_MapVote, NativeVotesType_Custom_Mult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_Display);
 		vote.SetTitle("MapChoices Group Vote Title");
 	}
 		
@@ -124,6 +128,8 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 		}
 	}
 	
+	vote.NoVoteButton = noVoteOption;
+	
 	vote.DisplayVote(clients, numClients, duration);
 	
 	return Plugin_Handled;
@@ -142,6 +148,8 @@ public Action Handler_CancelVote()
 		{
 			NativeVotes_Cancel();
 		}
+		
+		g_VoteInProgress = false;
 		return Plugin_Handled;
 	}
 	
@@ -169,6 +177,15 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 			vote.Close();
 		}
 		
+		// Only runs for Group votes
+		case MenuAction_Display:
+		{
+			char title[256];
+			vote.GetTitle(title, sizeof(title));
+			Format(title, sizeof(title), "%T", title, param1);
+			return view_as<int>(NativeVotes_RedrawVoteTitle(title));
+		}
+		
 		case MenuAction_VoteCancel:
 		{
 			switch (param1)
@@ -176,15 +193,40 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 				case VoteCancel_Generic:
 				{
 					vote.DisplayFail(NativeVotesFail_Generic);
+					MapChoices_VoteFailed(g_VoteType, MapChoices_Canceled);
 				}
 				
 				case VoteCancel_NoVotes:
 				{
-					vote.DisplayFail(NativeVotesFail_NotEnoughVotes);
+					if (g_NoVotesSelect)
+					{
+						// Prevent infinite loop
+						int timeout = 0;
+						
+						char item[PLATFORM_MAX_PATH];
+						do
+						{
+							int winner = GetRandomInt(0, vote.ItemCount - 1);
+							vote.GetItem(winner, item, sizeof(item));
+							timeout++;
+						} while ((StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE)) && timeout < 10);
+						
+						DisplayPass(vote, item);
+						
+						MapChoices_VoteSucceeded(g_VoteType, item, 0, 0);
+					}
+					else
+					{
+						vote.DisplayFail(NativeVotesFail_NotEnoughVotes);
+						MapChoices_VoteFailed(g_VoteType, MapChoices_FailedNoVotes);
+					}
+					
 				}
+				
 			}
 		}
 		
+		// Only runs for Map votes
 		case MenuAction_DisplayItem:
 		{
 			char item[PLATFORM_MAX_PATH];
@@ -212,36 +254,59 @@ public void Handler_MapVoteFinish(NativeVote vote,
 						const int[] item_indexes,
 						const int[] item_votes)
 {
-	//TODO Write map vote win logic
-}
+	float percentage = float(item_votes[0]) / float(num_votes);
 
-public int Handler_GroupVote(NativeVote vote, MenuAction action, int param1, int param2)
-{
-	switch(action)
+	if (percentage < g_Quorum)
 	{
-		case MenuAction_Display:
+		ArrayList items = new ArrayList(PLATFORM_MAX_PATH);
+		ArrayList votes = new ArrayList();
+		
+		for (int i = 0; i < num_items; i++)
 		{
-			char title[256];
-			vote.GetTitle(title, sizeof(title));
-			Format(title, sizeof(title), "%T", title, param1);
-			return view_as<int>(NativeVotes_RedrawVoteTitle(title));
+			char item[PLATFORM_MAX_PATH];
+			vote.GetItem(item_indexes[i], item, sizeof(item));
+			items.PushString(item);
+			votes.Push(item_votes[i]);
 		}
+		
+		vote.DisplayFail(NativeVotesFail_NotEnoughVotes);
+		MapChoices_VoteFailed(g_VoteType, MapChoices_FailedQuorum, items, votes);
+		
+		// Delete these ArrayLists to prevent memory leaks
+		delete items;
+		delete votes;
+		return;
 	}
 	
-	return 0;
+	int count = 1;
+	int winner = 0;
+	
+	// Check for ties, skip the first entry since we know it'll be there
+	while (count < num_items && item_votes[count] == item_votes[0])
+	{
+		count++;
+	}
+	
+	// If there is a tie, grab a random entry of the tied entries
+	if (count > 1)
+	{
+		winner = GetRandomInt(0, count-1);
+	}
+	
+	char item[PLATFORM_MAX_PATH];
+	vote.GetItem(item_indexes[winner], item, sizeof(item));
+	DisplayPass(vote, item);
+	MapChoices_VoteSucceeded(g_VoteType, item, num_votes, item_votes[winner]);
 }
 
-public void Handler_GroupVoteFinish(NativeVote vote,
-						int num_votes,
-						int num_clients,
-						const int[] client_indexes,
-						const int[] client_votes,
-						int num_items,
-						const int[] item_indexes,
-						const int[] item_votes)
+void DisplayPass(NativeVote vote, const char[] item)
 {
-	//TODO Write group vote win logic
+	if (StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE))
+	{
+		vote.DisplayPassEx(NativeVotesPass_Extend);
+	}
+	else
+	{
+		vote.DisplayPass(item);
+	}
 }
-
-
-

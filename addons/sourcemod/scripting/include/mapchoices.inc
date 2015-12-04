@@ -432,16 +432,18 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
 /**
  * Tells a vote system plugin to start a vote.
  * 
- * @param duration	How long should the vote last?
- * @param voteType	Which vote type is this: Map or Group?
- * @param itemList	A flat ArrayList of items.
- * @param clients		Which clients is this vote being sent to?
- * @param numClients	How many clients is this being sent to?
- * @param quorum		What percent of votes (0.0 to 1.0) are needed for the vote to pass? 0.0 will tell the plugin to always pass.
+ * @param duration		How long should the vote last?
+ * @param voteType		Which vote type is this: Map or Group?
+ * @param itemList		A flat ArrayList of items.
+ * @param clients			Which clients is this vote being sent to?
+ * @param numClients		How many clients is this being sent to?
+ * @param quorum			What percent of votes (0.0 to 1.0) are needed for the vote to pass? 0.0 will tell the plugin to always pass.
+ * @param noVotesSelect	If there are no votes, select a random item?
+ * @param noVoteOption		Add the No Vote option to the menu?  May not be supported by alternative vote providers.
  * 
- * @return			Plugin_Handled to indicate that a vote system handled this vote start
+ * @return				Plugin_Handled to indicate that a vote system handled this vote start
  */
-typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum);
+typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum, bool noVotesSelect, bool noVoteOption);
 
 /**
  * Tells a vote system plugin to cancel a vote
@@ -467,7 +469,7 @@ typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, const char[] item);
+native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, const char[] item, int votes, int votesTotal);
 
 /**
  * A Vote System plugin failed a vote.
@@ -476,13 +478,12 @@ native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, const char[] 
  * 
  * @param voteType		The type of vote completed: Map or Group.
  * @param failType		Why did the vote fail?
- * @param itemCount		0 if the vote was canceled, otherwise how many items got votes / are there.
  * @param items			If failedType is MapChoices_FailedQuorum or MapChoices_FailedNoVote, an array of items.
  * @param votes			If failedType is MapChoices_FailedQuorum, an array with the number of votes for each item.
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteFailedType failType, int itemCount, const char[] items, const int[] votes);
+native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteFailedType failType, ArrayList items=null, ArrayList votes=null);
 
 /**
  * Override the main vote system with a different one.
