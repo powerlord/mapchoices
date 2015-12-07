@@ -38,12 +38,14 @@
 
 // Plugin 1.0 series
 
+// Group for non-Grouped maplists.  Note: Extend and No Change also belong to this group
 #define MAPCHOICES_DEFAULTGROUP "classic"
 
 #define MAPCHOICES_EXTEND "__extend__"
 #define MAPCHOICES_NOCHANGE "__nochange__"
 
 #define MAPCHOICES_MAX_GROUP_LENGTH 64
+#define MAPCHOICES_MAX_ATTRIBUTE_LENGTH 128
 #define MAPCHOICES_MAX_MAP_ATTRIBUTES 16
 
 /**
@@ -68,6 +70,13 @@ enum MapChoices_VoteFailedType
 	MapChoices_Canceled,						/**< The vote was canceled */
 	MapChoices_FailedQuorum,					/**< Depending on configuration, a revote may follow */
 	MapChoices_FailedNoVotes,					/**< No one voted */
+}
+
+enum MapChoices_ExtendOptions
+{
+	MapChoicesExtend_None,
+	MapChoicesExtend_Extend,
+	MapChoicesExtend_NoChange
 }
 
 /**
@@ -270,6 +279,114 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
 	delete mapData[MapData_GroupAttributes];
 }
 
+stock void MapChoices_DeleteGroupData(int groupData[groupdata_t])
+{
+	delete groupData[GroupData_GroupAttributes];
+}
+
+stock void MapChoices_CopyMapData(int mapData[mapdata_t], int mapDataCopy[mapdata_t])
+{
+	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
+	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
+	
+	CopyStringMap(mapData[MapData_MapAttributes], mapDataCopy[MapData_MapAttributes]);
+	CopyStringMap(mapData[MapData_GroupAttributes], mapDataCopy[MapData_GroupAttributes]);
+}
+
+stock void MapChoices_CopyGroupData(int groupData[groupdata_t], int groupDataCopy[groupdata_t])
+{
+	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
+	
+	CopyStringMap(groupData[GroupData_GroupAttributes], groupDataCopy[GroupData_GroupAttributes]);
+}
+
+stock void MapChoices_CopyGroupDataToMapData(int groupData[groupdata_t], int mapData[mapdata_t])
+{
+	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), groupData[GroupData_Group]);
+	
+	CopyStringMap(groupData[GroupData_GroupAttributes], mapData[MapData_GroupAttributes]);
+}
+
+static stock void CopyStringMap(StringMap original, StringMap copy)
+{
+	// If the original is null, the new version should also be null
+	if (original == null)
+		return;
+	
+	// This should always run as the copy should be empty, but...
+	if (copy == null)
+		copy = new StringMap();
+	
+	StringMapSnapshot snapshot = original.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int size = snapshot.KeyBufferSize(i);
+		char[] key = new char[size];
+		snapshot.GetKey(i, key, size);
+		char value[MAPCHOICES_MAX_ATTRIBUTE_LENGTH];
+		original.GetString(key, value, sizeof(value));
+		
+		copy.SetString(key, value);
+	}
+	
+	delete snapshot;
+}
+
+/**
+ * Get the item string for specific map data
+ * This may change later and should be considered temporary for the time being
+ * 
+ * @param itemString		The string to store the item
+ * @param maxlength		We recommend that length be PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1
+ */
+stock void MapChoices_GetItemString(int item[mapdata_t], char[] itemString, int maxlength)
+{
+	if (StrEqual(item[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(item[MapData_Map], MAPCHOICES_NOCHANGE))
+	{
+		strcopy(itemString, maxlength, item[MapData_Map]);
+		return;
+	}
+	
+	Format(itemString, maxlength, "%s;%s", item[MapData_Group], item[MapData_Map]);
+}
+
+stock void MapChoices_GetMapDisplayString(int item[mapdata_t], char[] displayString, int maxlength)
+{
+	if (StrEqual(item[MapData_Map], MAPCHOICES_EXTEND))
+	{
+		strcopy(displayString, maxlength, "MapChoices_Extend");
+	}
+	else if (StrEqual(item[MapData_Map], MAPCHOICES_NOCHANGE))
+	{
+		strcopy(displayString, maxlength, "MapChoices_NoChange");
+	}
+	else
+	{
+		GetMapDisplayName(item[MapData_Map], displayString, maxlength);
+		
+		if (item[MapData_Group][0] != '\0' && !StrEqual(item[MapData_Group], MAPCHOICES_DEFAULTGROUP))
+		{
+			Format(displayString, maxlength, "%s (%s)", displayString, item[MapData_Group]);
+		}
+	}
+}
+
+stock void MapChoices_SplitItemString(const char[] itemString, char[] group, int groupSize, char[] map, int mapSize)
+{
+	if (StrEqual(itemString, MAPCHOICES_EXTEND) || StrEqual(itemString, MAPCHOICES_NOCHANGE))
+	{
+		strcopy(map, mapSize, itemString);
+		return;
+	}
+	
+	char itemParts[PLATFORM_MAX_PATH][2];
+	ExplodeString(itemString, ";", itemParts, sizeof(itemParts), sizeof(itemParts[]), false);
+	
+	strcopy(group, groupSize, itemParts[0]);
+	strcopy(map, mapSize, itemParts[1]);
+}
+
 /**
  * Attempt to add a map to the nomination list
  * 
@@ -340,6 +457,14 @@ native ArrayList MapChoices_GetNominatedMapOwners(const char[] group, const char
 native void MapChoices_GetCurrentMapGroup(char[] group, int maxlength);
 
 /**
+ * Get the vote type currently being used.
+ * Intended for other plugins to use for determining what kind of data they send in.
+ * 
+ * @return			The vote type currently being used.
+ */
+native MapChoices_VoteType MapChoices_GetVoteType();
+
+/**
  * Get a Trie of keys and values for a map and map group.
  * This is the same trie that would be passed to a map filter.
  * 
@@ -375,9 +500,7 @@ typedef MapChoices_VoteFinished = function void (MapChoices_VoteType voteType);
  * TODO: Figure out if we really want module
  * TODO: Document what's in mapList as it's not just a flat list.
  */
-native void MapChoices_InitiateVote(MapChoices_MapChange when, ArrayList itemList, const char[] module,
-	MapChoices_VoteType voteType = MapChoices_MapVote, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
-
+native void MapChoices_InitiateVote(MapChoices_MapChange when, ArrayList itemList, const char[] module, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 
 // --------------------------------------------------------------------------------
 // Forwards used by MapChoices subplugins for telling when votes start and finish
@@ -443,7 +566,8 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
  * 
  * @return				Plugin_Handled to indicate that a vote system handled this vote start
  */
-typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum, bool noVotesSelect, bool noVoteOption);
+typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, 
+	float quorum, bool noVotesSelect, bool noVoteOption);
 
 /**
  * Tells a vote system plugin to cancel a vote
@@ -465,11 +589,11 @@ typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress
  * A Vote System plugin passed a vote.
  * 
  * @param voteType		The type of vote completed: Map or Group.
- * @param item			The item that won the vote.
+ * @param mapData			Map Data for the item that won the vote.  MapData_Map and MapData_MapAttributes will be empty for a group vote
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, const char[] item, int votes, int votesTotal);
+native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, int mapData[mapdata_t], int votes, int votesTotal);
 
 /**
  * A Vote System plugin failed a vote.

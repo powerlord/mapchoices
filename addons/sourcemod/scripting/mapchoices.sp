@@ -60,6 +60,7 @@ ConVar g_Cvar_Enabled;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
 ConVar g_Cvar_WarningTime;
+ConVar g_Cvar_VoteType;
 
 // Valve ConVars
 //ConVar g_Cvar_Timelimit;
@@ -105,6 +106,8 @@ int g_Serial = -1;
 
 char g_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 
+MapChoices_VoteType g_VoteType;
+
 //new Handle:m_ListLookup;
 
 Handle g_hTimeLimitVote;
@@ -138,11 +141,14 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	
 	// Vote data
 	CreateNative("MapChoices_GetCurrentMapGroup", Native_GetCurrentMapGroup);
+	CreateNative("MapChoices_GetVoteType", Native_GetVoteType);
 	CreateNative("MapChoices_GetMapData", Native_GetMapData);
 	CreateNative("MapChoices_CanStartVote", Native_CanStartVote);
 	CreateNative("MapChoices_InitiateVote", Native_InitiateVote);
 	
 	// Alternate Vote Handlers
+	CreateNative("MapChoices_VoteSucceeded", Native_VoteSucceeded);
+	CreateNative("MapChoices_VoteFailed", Native_VoteFailed);
 	CreateNative("MapChoices_RegisterVoteHandler", Native_RegisterVoteHandler);
 	CreateNative("MapChoices_UnregisterVoteHandler", Native_UnregisterVoteHandler);
 	
@@ -183,6 +189,7 @@ public void OnPluginStart()
 	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 1.0, true, 15.0);
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
 	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
+	g_Cvar_VoteType = CreateConVar("mapchoices_votetype", "0", "Vote type MaoChoices will use: 0 = Map, 1 = Group, 2 = Tiered (Group then Map). Takes effect at next map change. This is defined here instead of in each map plugin so that nominations can be handled correctly.", _, true, 0.0, true, 2.0);
 	
 	// Core map vote starting stuff
 	
@@ -233,13 +240,18 @@ public void OnMapStart()
 	g_bMapVoteCompleted = false;
 }
 
+public void OnConfigsExecuted()
+{
+	g_VoteType = view_as<MapChoices_VoteType>(g_Cvar_VoteType.IntValue);
+}
+
 public void OnClientDisconnect(int client)
 {
 	// Clear the client's nominations
 	RemoveClientMapNomination(client);
 }
 
-int FindMapInNominations(const char[] group, const char[] map)
+stock int FindMapInNominations(const char[] group, const char[] map)
 {
 	if (strlen(group) <= 0 || strlen(map) <= 0)
 	{
@@ -260,7 +272,7 @@ int FindMapInNominations(const char[] group, const char[] map)
 	return -1;
 }
 
-bool RemoveMapFromNominations(const char[] group, const char[] map, int client = 0)
+stock bool RemoveMapFromNominations(const char[] group, const char[] map, int client = 0)
 {
 	if (strlen(group) <= 0 || strlen(map) <= 0)
 	{
@@ -304,7 +316,7 @@ bool RemoveMapFromNominations(const char[] group, const char[] map, int client =
 	return false;
 }
 
-bool RemoveClientMapNomination(int client)
+stock bool RemoveClientMapNomination(int client)
 {
 	if (g_MapNominations[client][NominationsData_Map][0] != '\0' && g_MapNominations[client][NominationsData_Group][0] != '\0')
 	{
@@ -314,7 +326,7 @@ bool RemoveClientMapNomination(int client)
 	g_MapNominations[client][NominationsData_Group][0] = '\0';
 }
 
-int FindMapInMapList(const char[] group, const char[] map)
+stock int FindMapInMapList(const char[] group, const char[] map)
 {
 	if (strlen(group) <= 0 || strlen(map) <= 0)
 	{
@@ -662,6 +674,12 @@ public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
 	SetNativeString(1, g_MapGroup, GetNativeCell(2));
 }
 
+// native MapChoices_VoteType MapChoices_GetVoteType();
+public int Native_GetVoteType(Handle plugin, int numParams)
+{
+	return view_as<int>(g_VoteType);
+}
+
 // native bool MapChoices_GetMapData(const char[] group, const char[] map, int mapData[mapdata_t]);
 public int Native_GetMapData(Handle plugin, int numParams)
 {
@@ -680,13 +698,11 @@ public int Native_CanStartVote(Handle plugin, int numParams)
 	return true;
 }
 
-//native void MapChoices_InitiateVote(MapChoices_MapChange when, ArrayList itemList, const char[] module,
-//		MapChoices_VoteType voteType = MapChoices_MapVote, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
+//native void MapChoices_InitiateVote(MapChoices_MapChange when, ArrayList itemList, const char[] module, MapChoices_VoteFinished finishedFunction = INVALID_FUNCTION);
 public int Native_InitiateVote(Handle plugin, int numParams)
 {
 	MapChoices_MapChange when = GetNativeCell(1);
 	ArrayList mapList = view_as<ArrayList>(GetNativeCell(2));
-	MapChoices_VoteType voteType = GetNativeCell(4);
 	
 	int stringLength;
 	GetNativeStringLength(3, stringLength);
@@ -694,11 +710,58 @@ public int Native_InitiateVote(Handle plugin, int numParams)
 	char[] module = new char[stringLength +1];
 	GetNativeString(3, module, stringLength);
 	
-	Function finishedFunction = GetNativeFunction(5);
+	Function finishedFunction = GetNativeFunction(4);
 
 	// TODO: Fix this to handle Group and Tier votes
 	
 	StartVote(when, mapList);
+}
+
+public int Native_VoteSucceeded(Handle plugin, int numParams)
+{
+	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(GetNativeCell(1));
+	
+	int size;
+	GetNativeStringLength(2, size);
+	char[] item = new char[size+1];
+	GetNativeString(2, item, size+1);
+	
+	int votes = GetNativeCell(3);
+	int votesTotal = GetNativeCell(4);
+	
+	switch (g_VoteType)
+	{
+		case MapChoices_MapVote:
+		{
+			char displayName[PLATFORM_MAX_PATH];
+			GetMapDisplayName(item, displayName, sizeof(displayName));
+			
+			SetNextMap(item);
+			PrintToChatAll("%t", "MapChoices_MapVoteWin", displayName);
+			
+		}
+		
+		case MapChoices_GroupVote:
+		{
+			
+		}
+		
+		case MapChoices_TieredVote:
+		{
+			switch (voteType)
+			{
+				case MapChoices_MapVote:
+				{
+				}
+				
+				case MapChoices_GroupVote:
+				{
+					
+				}
+			}
+		}
+	}
+	
 }
 
 // native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
@@ -789,13 +852,17 @@ public int Native_WillChangeAtRoundEnd(Handle plugin, int numParams)
 // native bool MapChoices_RegisterChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 public int Native_RegisterChangeMapHandler(Handle plugin, int numParams)
 {
-	// TODO: Implement this
+	Function func = GetNativeFunction(1);
+	
+	return AddToForward(g_Forward_ChangeMap, plugin, func);
 }
 
 // native bool MapChoices_UnregisterChangeMapHandler(MapChoices_ChangeMapForward changeMapHandler);
 public int Native_UnregisterChangeMapHandler(Handle plugin, int numParams)
 {
-	// TODO: Implement this
+	Function func = GetNativeFunction(1);
+	
+	return RemoveFromForward(g_Forward_ChangeMap, plugin, func);
 }
 
 // native void MapChoices_AddGameFlags(MapChoices_GameFlags flags);

@@ -48,6 +48,8 @@ float g_Quorum = 0.0;
 MapChoices_VoteType g_VoteType = MapChoices_MapVote;
 bool g_NoVotesSelect = false;
 
+StringMap g_ItemData;
+
 public Plugin myinfo = {
 	name			= "MapChoices NativeVotes",
 	author			= "Powerlord",
@@ -97,6 +99,41 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	g_NoVotesSelect = noVotesSelect;
 	
 	// This is never MapChoices_TieredVote as that's handled by the parent plugin
+
+	// Make a deep copy of the itemList
+	if (g_ItemData != null)
+		delete g_ItemData;
+		
+	g_ItemData = new StringMap();
+	
+	for (int i = 0; i < itemList.Length; i++)
+	{
+		switch (voteType)
+		{
+			case MapChoices_MapVote:
+			{
+				int mapData[mapdata_t];
+				int mapDataCopy[mapdata_t];
+				itemList.GetArray(i, mapData, sizeof(mapData));
+				MapChoices_CopyMapData(mapData, mapDataCopy);
+				
+				char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+				MapChoices_GetItemString(mapDataCopy, itemString, sizeof(itemString));
+				
+				g_ItemData.SetArray(itemString, mapDataCopy, sizeof(mapDataCopy));
+			}
+			
+			case MapChoices_GroupVote:
+			{
+				int groupData[groupdata_t];
+				int groupDataCopy[groupdata_t];
+				itemList.GetArray(i, groupData, sizeof(groupData));
+				MapChoices_CopyGroupData(groupData, groupDataCopy);
+				
+				g_ItemData.SetArray(groupData[GroupData_Group], groupDataCopy, sizeof(groupDataCopy));
+			}
+		}
+	}
 	
 	NativeVote vote;
 	if (voteType == MapChoices_MapVote)
@@ -111,20 +148,29 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 		
 	for (int i = 0; i < itemList.Length; i++)
 	{
-		char item[PLATFORM_MAX_PATH];
-		
-		itemList.GetString(i, item, sizeof(item));
-		
-		if (voteType == MapChoices_MapVote && !StrEqual(item, MAPCHOICES_EXTEND) && !StrEqual(item, MAPCHOICES_NOCHANGE))
+		switch (voteType)
 		{
-			// Maps have a display name that we need to fetch
-			char displayMap[PLATFORM_MAX_PATH];
-			GetMapDisplayName(item, displayMap, sizeof(displayMap));
-			vote.AddItem(item, displayMap);
-		}
-		else
-		{
-			vote.AddItem(item, item);
+			case MapChoices_MapVote:
+			{
+				int item[mapdata_t];
+				itemList.GetArray(i, item, sizeof(item));
+				
+				char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+				MapChoices_GetItemString(item, itemString, sizeof(itemString));
+				
+				char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
+				MapChoices_GetMapDisplayString(item, displayString, sizeof(displayString));
+				
+				vote.AddItem(itemString, displayString);
+			}
+			
+			case MapChoices_GroupVote:
+			{
+				int item[groupdata_t];
+				itemList.GetArray(i, item, sizeof(item));
+				
+				vote.AddItem(item[GroupData_Group], item[GroupData_Group]);
+			}
 		}
 	}
 	
@@ -203,17 +249,44 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 						// Prevent infinite loop
 						int timeout = 0;
 						
-						char item[PLATFORM_MAX_PATH];
+						char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
 						do
 						{
 							int winner = GetRandomInt(0, vote.ItemCount - 1);
-							vote.GetItem(winner, item, sizeof(item));
+							vote.GetItem(winner, itemString, sizeof(itemString));
 							timeout++;
-						} while ((StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE)) && timeout < 10);
+						} while ((StrEqual(itemString, MAPCHOICES_EXTEND) || StrEqual(itemString, MAPCHOICES_NOCHANGE)) && timeout < 10);
 						
-						DisplayPass(vote, item);
-						
-						MapChoices_VoteSucceeded(g_VoteType, item, 0, 0);
+						int mapData[mapdata_t];
+
+						switch (g_VoteType)
+						{
+							case MapChoices_MapVote:
+							{
+								g_ItemData.GetArray(itemString, mapData, sizeof(mapData));
+								
+								// Internal function
+								DisplayPass(vote, mapData);
+								
+								MapChoices_VoteSucceeded(g_VoteType, mapData, 0, 0);
+								MapChoices_DeleteMapData(mapData);
+							}
+							
+							case MapChoices_GroupVote:
+							{
+								int groupData[groupdata_t];
+								g_ItemData.GetArray(itemString, groupData, sizeof(groupData));
+								
+								MapChoices_CopyGroupDataToMapData(groupData, mapData);
+								
+								// Internal function
+								DisplayPass(vote, mapData);
+								
+								MapChoices_DeleteGroupData(groupData);
+							}
+						}
+						MapChoices_VoteSucceeded(g_VoteType, mapData, 0, 0);
+						MapChoices_DeleteMapData(mapData);
 					}
 					else
 					{
@@ -233,6 +306,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 			char display[256];
 			vote.GetItem(param2, item, sizeof(item), display, sizeof(display));
 			
+			// Regular items are map;group, but these are left intact
 			if (StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE))
 			{
 				Format(display, sizeof(display), "%T", display, param1);
@@ -293,20 +367,54 @@ public void Handler_MapVoteFinish(NativeVote vote,
 		winner = GetRandomInt(0, count-1);
 	}
 	
-	char item[PLATFORM_MAX_PATH];
-	vote.GetItem(item_indexes[winner], item, sizeof(item));
-	DisplayPass(vote, item);
-	MapChoices_VoteSucceeded(g_VoteType, item, num_votes, item_votes[winner]);
+	char itemString[PLATFORM_MAX_PATH];
+	vote.GetItem(item_indexes[winner], itemString, sizeof(itemString));
+	
+	int mapData[mapdata_t];
+	
+	switch (g_VoteType)
+	{
+		case MapChoices_MapVote:
+		{
+			g_ItemData.GetArray(itemString, mapData, sizeof(mapData));
+			
+			// Internal function
+			DisplayPass(vote, mapData);
+			
+			MapChoices_VoteSucceeded(g_VoteType, mapData, 0, 0);
+			MapChoices_DeleteMapData(mapData);
+		}
+		
+		case MapChoices_GroupVote:
+		{
+			int groupData[groupdata_t];
+			g_ItemData.GetArray(itemString, groupData, sizeof(groupData));
+			
+			MapChoices_CopyGroupDataToMapData(groupData, mapData);
+			
+			// Internal function
+			DisplayPass(vote, mapData);
+			
+			MapChoices_DeleteGroupData(groupData);
+		}
+	}
+	
+	DisplayPass(vote, mapData);
+	MapChoices_VoteSucceeded(g_VoteType, mapData, num_votes, item_votes[winner]);
+	MapChoices_DeleteMapData(mapData);		
 }
 
-void DisplayPass(NativeVote vote, const char[] item)
+void DisplayPass(NativeVote vote, int mapData[mapdata_t])
 {
-	if (StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE))
+	if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
 	{
 		vote.DisplayPassEx(NativeVotesPass_Extend);
 	}
 	else
 	{
-		vote.DisplayPass(item);
+		char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
+		MapChoices_GetMapDisplayString(mapData, displayString, sizeof(displayString));
+		
+		vote.DisplayPass(displayString);
 	}
 }
