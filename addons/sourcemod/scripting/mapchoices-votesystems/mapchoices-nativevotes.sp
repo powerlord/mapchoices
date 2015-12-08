@@ -44,11 +44,13 @@
 ConVar g_Cvar_Enabled;
 
 bool g_VoteInProgress;
-float g_Quorum = 0.0;
+//float g_Quorum = 0.0;
 MapChoices_VoteType g_VoteType = MapChoices_MapVote;
-bool g_NoVotesSelect = false;
+//bool g_NoVotesSelect = false;
 
 StringMap g_ItemData;
+
+NativeVote g_NativeVote = null;
 
 public Plugin myinfo = {
 	name			= "MapChoices NativeVotes",
@@ -76,7 +78,7 @@ public void OnPluginStart()
 
 public void OnAllPluginsLoaded()
 {
-	MapChoices_RegisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress, NativeVotes_GetMaxItems());
+	MapChoices_RegisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress, NativeVotes_GetMaxItems(), Handler_VoteWon, Handler_VoteLost);
 }
 
 public void OnPluginEnd()
@@ -84,7 +86,31 @@ public void OnPluginEnd()
 	MapChoices_UnregisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress);
 }
 
-public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, float quorum, bool noVotesSelect, bool noVoteOption)
+public Action Handler_VoteWon(int mapData[mapdata_t])
+{
+	DisplayPass(g_NativeVote, mapData);
+}
+
+public Action Handler_VoteLost(MapChoices_VoteFailedType failType)
+{
+	switch (failType)
+	{
+		// This should be handled internally, but just in case...
+		case MapChoices_Canceled:
+		{
+			g_NativeVote.DisplayFail(NativeVotesFail_Generic);
+		}
+		
+		// Although these two are semantically different, NativeVotes only has one "not enough votes" message
+		case MapChoices_FailedQuorum, MapChoices_FailedNoVotes:
+		{
+			g_NativeVote.DisplayFail(NativeVotesFail_NotEnoughVotes);
+		}
+	}
+}
+
+// If Extend or No Change are in a vote, they should have been passed in the itemList from core
+public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, bool noVoteOption)
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
@@ -94,9 +120,9 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	// We are naively assuming that NativeVotes_IsVoteInProgress was checked before our handler was called
 
 	g_VoteInProgress = true;
-	g_Quorum = quorum;
+	//g_Quorum = quorum;
 	g_VoteType = voteType;
-	g_NoVotesSelect = noVotesSelect;
+	//g_NoVotesSelect = noVotesSelect;
 	
 	// This is never MapChoices_TieredVote as that's handled by the parent plugin
 
@@ -108,15 +134,15 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	
 	for (int i = 0; i < itemList.Length; i++)
 	{
+		int mapData[mapdata_t];
+		int mapDataCopy[mapdata_t];
+		itemList.GetArray(i, mapData, sizeof(mapData));
+		MapChoices_CopyMapData(mapData, mapDataCopy);
+
 		switch (voteType)
 		{
 			case MapChoices_MapVote:
 			{
-				int mapData[mapdata_t];
-				int mapDataCopy[mapdata_t];
-				itemList.GetArray(i, mapData, sizeof(mapData));
-				MapChoices_CopyMapData(mapData, mapDataCopy);
-				
 				char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
 				MapChoices_GetItemString(mapDataCopy, itemString, sizeof(itemString));
 				
@@ -125,25 +151,19 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 			
 			case MapChoices_GroupVote:
 			{
-				int groupData[groupdata_t];
-				int groupDataCopy[groupdata_t];
-				itemList.GetArray(i, groupData, sizeof(groupData));
-				MapChoices_CopyGroupData(groupData, groupDataCopy);
-				
-				g_ItemData.SetArray(groupData[GroupData_Group], groupDataCopy, sizeof(groupDataCopy));
+				g_ItemData.SetArray(mapDataCopy[MapData_Group], mapDataCopy, sizeof(mapDataCopy));
 			}
 		}
 	}
 	
-	NativeVote vote;
 	if (voteType == MapChoices_MapVote)
 	{
-		vote = new NativeVote(Handler_MapVote, NativeVotesType_NextLevelMult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_DisplayItem);
+		g_NativeVote = new NativeVote(Handler_MapVote, NativeVotesType_NextLevelMult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_DisplayItem);
 	}
 	else
 	{
-		vote = new NativeVote(Handler_MapVote, NativeVotesType_Custom_Mult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_Display);
-		vote.SetTitle("MapChoices Group Vote Title");
+		g_NativeVote = new NativeVote(Handler_MapVote, NativeVotesType_Custom_Mult, NATIVEVOTES_ACTIONS_DEFAULT|MenuAction_Display);
+		g_NativeVote.SetTitle("MapChoices Group Vote Title");
 	}
 		
 	for (int i = 0; i < itemList.Length; i++)
@@ -161,7 +181,7 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 				char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
 				MapChoices_GetMapDisplayString(item, displayString, sizeof(displayString));
 				
-				vote.AddItem(itemString, displayString);
+				g_NativeVote.AddItem(itemString, displayString);
 			}
 			
 			case MapChoices_GroupVote:
@@ -169,14 +189,14 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 				int item[groupdata_t];
 				itemList.GetArray(i, item, sizeof(item));
 				
-				vote.AddItem(item[GroupData_Group], item[GroupData_Group]);
+				g_NativeVote.AddItem(item[GroupData_Group], item[GroupData_Group]);
 			}
 		}
 	}
 	
-	vote.NoVoteButton = noVoteOption;
+	g_NativeVote.NoVoteButton = noVoteOption;
 	
-	vote.DisplayVote(clients, numClients, duration);
+	g_NativeVote.DisplayVote(clients, numClients, duration);
 	
 	return Plugin_Handled;
 }
@@ -220,30 +240,41 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 	{
 		case MenuAction_End:
 		{
+			// This *should* be called after the win/lose callbacks
 			vote.Close();
+			delete g_NativeVote;
 		}
 		
 		// Only runs for Group votes
 		case MenuAction_Display:
 		{
-			char title[256];
-			vote.GetTitle(title, sizeof(title));
-			Format(title, sizeof(title), "%T", title, param1);
-			return view_as<int>(NativeVotes_RedrawVoteTitle(title));
+			if (g_VoteType == MapChoices_GroupVote)
+			{
+				char title[256];
+				vote.GetTitle(title, sizeof(title));
+				Format(title, sizeof(title), "%T", title, param1);
+				return view_as<int>(NativeVotes_RedrawVoteTitle(title));
+			}
 		}
 		
 		case MenuAction_VoteCancel:
 		{
+			bool canceled = false;
+			
 			switch (param1)
 			{
 				case VoteCancel_Generic:
 				{
+					// Vote was canceled from outside source, show the NativeVotes cancel screen
 					vote.DisplayFail(NativeVotesFail_Generic);
-					MapChoices_VoteFailed(g_VoteType, MapChoices_Canceled);
+					canceled = true;
 				}
 				
 				case VoteCancel_NoVotes:
 				{
+					
+					// Old code, needs to be moved to core
+					/*
 					if (g_NoVotesSelect)
 					{
 						// Prevent infinite loop
@@ -294,9 +325,18 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 						MapChoices_VoteFailed(g_VoteType, MapChoices_FailedNoVotes);
 					}
 					
+					*/
+					
 				}
 				
 			}
+
+			ArrayList items = new ArrayList(mapdata_t);
+			ArrayList votes = new ArrayList();
+			
+			MapChoices_VoteCompleted(g_VoteType, items, votes, canceled);
+			delete items;
+			delete votes;
 		}
 		
 		// Only runs for Map votes
@@ -328,12 +368,31 @@ public void Handler_MapVoteFinish(NativeVote vote,
 						const int[] item_indexes,
 						const int[] item_votes)
 {
+	ArrayList items = new ArrayList(mapdata_t);
+	ArrayList votes = new ArrayList();
+	
+	for (int i = 0; i < num_items; i++)
+	{
+		char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+		int mapData[mapdata_t];
+		vote.GetItem(item_indexes[i], item, sizeof(item));
+		
+		g_ItemData.GetArray(item, mapData, sizeof(mapData));
+		items.PushArray(mapData, sizeof(mapData));
+		votes.Push(item_votes[i]);
+	}
+	
+	MapChoices_VoteCompleted(g_VoteType, items, votes);
+	delete items;
+	delete votes;
+	
+	// Old logic, needs to be moved to core
+	
+	/*
 	float percentage = float(item_votes[0]) / float(num_votes);
 
 	if (percentage < g_Quorum)
 	{
-		ArrayList items = new ArrayList(PLATFORM_MAX_PATH);
-		ArrayList votes = new ArrayList();
 		
 		for (int i = 0; i < num_items; i++)
 		{
@@ -401,7 +460,8 @@ public void Handler_MapVoteFinish(NativeVote vote,
 	
 	DisplayPass(vote, mapData);
 	MapChoices_VoteSucceeded(g_VoteType, mapData, num_votes, item_votes[winner]);
-	MapChoices_DeleteMapData(mapData);		
+	MapChoices_DeleteMapData(mapData);
+	*/
 }
 
 void DisplayPass(NativeVote vote, int mapData[mapdata_t])
@@ -409,6 +469,10 @@ void DisplayPass(NativeVote vote, int mapData[mapdata_t])
 	if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
 	{
 		vote.DisplayPassEx(NativeVotesPass_Extend);
+	}
+	else if (g_VoteType == MapChoices_GroupVote)
+	{
+		vote.DisplayPass(mapData[MapData_Group]);
 	}
 	else
 	{

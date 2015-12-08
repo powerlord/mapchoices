@@ -374,17 +374,29 @@ stock void MapChoices_GetMapDisplayString(int item[mapdata_t], char[] displayStr
 
 stock void MapChoices_SplitItemString(const char[] itemString, char[] group, int groupSize, char[] map, int mapSize)
 {
+	if (groupSize == 0 || mapSize == 0)
+		return;
+		
+	// These two are special and just return a map
 	if (StrEqual(itemString, MAPCHOICES_EXTEND) || StrEqual(itemString, MAPCHOICES_NOCHANGE))
 	{
 		strcopy(map, mapSize, itemString);
-		return;
+		group[0] = '\0';
 	}
-	
-	char itemParts[PLATFORM_MAX_PATH][2];
-	ExplodeString(itemString, ";", itemParts, sizeof(itemParts), sizeof(itemParts[]), false);
-	
-	strcopy(group, groupSize, itemParts[0]);
-	strcopy(map, mapSize, itemParts[1]);
+	// If an item is just a group, it won't have a ";"
+	else if (StrContains(itemString, ";") == -1)
+	{
+		strcopy(group, groupSize, itemString);
+		map[0] = '\0';
+	}
+	else
+	{
+		char itemParts[PLATFORM_MAX_PATH][2];
+		ExplodeString(itemString, ";", itemParts, sizeof(itemParts), sizeof(itemParts[]), false);
+		
+		strcopy(group, groupSize, itemParts[0]);
+		strcopy(map, mapSize, itemParts[1]);
+	}
 }
 
 /**
@@ -567,10 +579,11 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
  * @return				Plugin_Handled to indicate that a vote system handled this vote start
  */
 typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, 
-	float quorum, bool noVotesSelect, bool noVoteOption);
+	bool noVoteOption);
 
 /**
- * Tells a vote system plugin to cancel a vote
+ * Tells a vote system plugin to cancel a vote.
+ * Potentially obsoleted by MapChoices_VoteCompleted's canceled bool as the vote systems can inform us of a cancel.
  * 
  * @return			Plugin_Handled to indicate that a vote system handled this vote cancel
  */
@@ -586,6 +599,37 @@ typedef MapChoices_HandlerCancelVote = function Action ();
 typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
 
 /**
+ * If registered, this will be called when a vote is won.  It is always a mapdata_t even for groups.
+ * 
+ * This is mainly for plugins like NativeVotes to display a win or lose message.
+ * 
+ * @param mapData		A mapdata_t of the map or group's information
+ * @return			Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
+ */
+typedef MapChoices_HandlerVoteWon = function Action (int mapData[mapdata_t]);
+
+/**
+ * If registered, this will be called when a vote is lost.
+ * 
+ * This is mainly for plugins like NativeVotes to display a win or lose message.
+ * 
+ * @param failType	What kind of vote failure this is.
+ * @return			Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
+ */
+typedef MapChoices_HandlerVoteLost = function Action (MapChoices_VoteFailedType failType);
+
+/**
+ * A Vote System plugin finished a vote.
+ * 
+ * MapChoices_HandlerVoteWon and MapChoices_HandlerVoteLost will be called from this function.
+ * 
+ * @param voteType		The vote type in question.  Can be Map or Group.
+ * @param items			An ArrayList of mapdata_t for all items that got votes.
+ * @param votes			An ArrayList containing the number of votes corresponding to each of the items above.
+ */
+native void MapChoices_VoteCompleted(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, bool canceled=false);
+
+/**
  * A Vote System plugin passed a vote.
  * 
  * @param voteType		The type of vote completed: Map or Group.
@@ -593,7 +637,7 @@ typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, int mapData[mapdata_t], int votes, int votesTotal);
+//native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, int mapData[mapdata_t], int votes, int votesTotal);
 
 /**
  * A Vote System plugin failed a vote.
@@ -607,7 +651,7 @@ native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, int mapData[m
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteFailedType failType, ArrayList items=null, ArrayList votes=null);
+//native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteFailedType failType, ArrayList items=null, ArrayList votes=null);
 
 /**
  * Override the main vote system with a different one.
@@ -619,8 +663,10 @@ native void MapChoices_VoteFailed(MapChoices_VoteType voteType, MapChoices_VoteF
  * @param isVoteInProgress	The function to call to determine whether or not a vote is in progress
  * @param voteLimit		The number of items that can be in a vote.
  */
-native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
-native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress);
+native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0,
+	MapChoices_HandlerVoteWon voteWon=INVALID_FUNCTION, MapChoices_HandlerVoteLost voteLost=INVALID_FUNCTION);
+native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress,
+	MapChoices_HandlerVoteWon voteWon=INVALID_FUNCTION, MapChoices_HandlerVoteLost voteLost=INVALID_FUNCTION);
 
 // --------------------------------------------------------------------------------
 // Functions used by Map Filter plugins

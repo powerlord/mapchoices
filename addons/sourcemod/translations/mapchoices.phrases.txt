@@ -1,0 +1,54 @@
+"Phrases"
+{
+	"MapChoices Extend Map"
+	{
+		"en"		"Extend Map"
+	}
+	
+	"MapChoices Dont Change"
+	{
+		"en"		"Don't Change"
+	}
+	
+	"MapChoices Group Voting Finished"
+	{
+		"#format"	"{1:s},{2:i},{3:i}"
+		"en"		"Group voting has finished. The next group will be {1}. (Received {2}%% of {3} votes)"
+	}
+	
+	"MapChoices Map Voting Finished Advanced"
+	{
+		"#format"	"{1:s},{2:s},{3:i},{4:1}"
+		"en"		"Map voting has finished. The next map will be {1} from group {2}. (Received {3}%% of {4} votes)"
+	}
+	
+	"MapChoices Map Voting Finished Simple"
+	{
+		"#format"	"{1:s},{2:i},{3:1}"
+		"en"		"Map voting has finished. The next map will be {1}. (Received {2}%% of {3} votes)"
+	}
+	
+	"MapChoices Current Map Stays"
+	{
+		"#format"	"{1:i},{2:i}"
+		"en"		"Current map continues! The Vote has spoken! (Received {1}%% of {2} votes)"
+	}
+	
+	"MapChoices Vote Warning"
+	{
+		"#format"	"{1:i}"
+		"en"		"New vote will start in {1} second(s)"
+	}
+	
+	"MapChoices Map Runoff Indicator"
+	{
+		"#format"		"{1:.0f},{2:s},{3:.0f},{4:s},{5:.0f}"
+		"en"			"No map got over {1}%% votes ({2} [{3}%%] & {4} [{5}%%]), starting runoff vote"
+	}
+	
+	"MapChoices Group Runoff Indicator"
+	{
+		"#format"		"{1:.0f},{2:s},{3:.0f},{4:s},{5:.0f}"
+		"en"			"No group got over {1}%% votes ({2} [{3}%%] & {4} [{5}%%]), starting runoff vote"
+	}
+}

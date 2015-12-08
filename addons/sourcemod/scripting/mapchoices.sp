@@ -82,6 +82,8 @@ Handle g_Forward_NominationRemoved;
 Handle g_Forward_HandlerVoteStart;
 Handle g_Forward_HandlerCancelVote;
 Handle g_Forward_HandlerIsVoteInProgress;
+Handle g_Forward_HandlerVoteWon;
+Handle g_Forward_HandlerVoteLost;
 
 Handle g_Forward_MapFilter;
 Handle g_Forward_GroupFilter;
@@ -211,9 +213,11 @@ public void OnPluginStart()
 	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	
-	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell);
+	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Cell, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
-	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook);
+	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook, Param_CellByRef);
+	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Array);
+	g_Forward_HandlerVoteLost = CreateForward(ET_Hook, Param_Cell);
 		
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Array);
 	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_Array);
@@ -717,27 +721,37 @@ public int Native_InitiateVote(Handle plugin, int numParams)
 	StartVote(when, mapList);
 }
 
+public int Native_VoteCompleted(Handle plugin, int numParams)
+{
+	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(GetNativeCell(1));
+	
+	ArrayList items = view_as<int>(GetNativeCell(2));
+	ArrayList votes = view_as<int>(GetNativeCell(3));
+	
+	// TODO Finish this, remove next two natives.
+}
+
 public int Native_VoteSucceeded(Handle plugin, int numParams)
 {
 	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(GetNativeCell(1));
 	
-	int size;
-	GetNativeStringLength(2, size);
-	char[] item = new char[size+1];
-	GetNativeString(2, item, size+1);
+	int mapData[mapdata_t];
+	GetNativeArray(2, mapData, sizeof(mapData));
 	
 	int votes = GetNativeCell(3);
 	int votesTotal = GetNativeCell(4);
+	
+	float percent = float(votes) / float(votesTotal);
 	
 	switch (g_VoteType)
 	{
 		case MapChoices_MapVote:
 		{
 			char displayName[PLATFORM_MAX_PATH];
-			GetMapDisplayName(item, displayName, sizeof(displayName));
+			GetMapDisplayName(mapData[MapData_Map], displayName, sizeof(displayName));
 			
-			SetNextMap(item);
-			PrintToChatAll("%t", "MapChoices_MapVoteWin", displayName);
+			SetNextMap(mapData[MapData_Map]);
+			PrintToChatAll("%t", "MapChoices_MapVoteWin", mapData[MapData_Group], displayName);
 			
 		}
 		
@@ -762,6 +776,11 @@ public int Native_VoteSucceeded(Handle plugin, int numParams)
 		}
 	}
 	
+}
+
+public int Native_VoteFailed(Handle plugin, int numParams)
+{
+	// TODO Implement this
 }
 
 // native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);

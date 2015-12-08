@@ -36,6 +36,7 @@
 #include "include/mapchoices" // Include our own parent's file to make native calls against it
 #include "include/mapchoices-mapend" // Include our own file to gain access to enums and the like
 #include <sdktools>
+#include <multicolors>
 
 #pragma semicolon 1
 #pragma newdecls required
