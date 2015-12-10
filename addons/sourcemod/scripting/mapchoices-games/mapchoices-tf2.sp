@@ -79,7 +79,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	if (GetEngineVersion() != Engine_TF2)
 	{
 		strcopy(error, err_max, "Plugin is for TF2 only.");
-		return APLRes_Failure;
+		return APLRes_SilentFailure;
 	}
 	
 	return APLRes_Success;

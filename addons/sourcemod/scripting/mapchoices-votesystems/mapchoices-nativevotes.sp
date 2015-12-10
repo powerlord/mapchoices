@@ -259,7 +259,8 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 		
 		case MenuAction_VoteCancel:
 		{
-			bool canceled = false;
+			ArrayList items = new ArrayList(mapdata_t);
+			ArrayList votes = new ArrayList();
 			
 			switch (param1)
 			{
@@ -267,7 +268,6 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 				{
 					// Vote was canceled from outside source, show the NativeVotes cancel screen
 					vote.DisplayFail(NativeVotesFail_Generic);
-					canceled = true;
 				}
 				
 				case VoteCancel_NoVotes:
@@ -327,6 +327,16 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 					
 					*/
 					
+					for (int i = 0; i < num_items; i++)
+					{
+						char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+						int mapData[mapdata_t];
+						vote.GetItem(i, item, sizeof(item));
+						
+						g_ItemData.GetArray(item, mapData, sizeof(mapData));
+						items.PushArray(mapData, sizeof(mapData));
+						votes.Push(0);
+					}
 				}
 				
 			}
@@ -334,7 +344,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 			ArrayList items = new ArrayList(mapdata_t);
 			ArrayList votes = new ArrayList();
 			
-			MapChoices_VoteCompleted(g_VoteType, items, votes, canceled);
+			MapChoices_VoteCompleted(g_VoteType, items, votes, true);
 			delete items;
 			delete votes;
 		}

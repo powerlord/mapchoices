@@ -34,6 +34,7 @@
 
 #include "include/mapchoices" // Include our own file to gain access to enums and the like
 #include <sdktools>
+#include <multicolors>
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -61,6 +62,10 @@ ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
 ConVar g_Cvar_WarningTime;
 ConVar g_Cvar_VoteType;
+ConVar g_Cvar_Runoffs;
+ConVar g_Cvar_RunoffPercent;
+ConVar g_Cvar_NoVote;
+ConVar g_Cvar_NoVoteButton;
 
 // Valve ConVars
 //ConVar g_Cvar_Timelimit;
@@ -192,6 +197,10 @@ public void OnPluginStart()
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
 	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
 	g_Cvar_VoteType = CreateConVar("mapchoices_votetype", "0", "Vote type MaoChoices will use: 0 = Map, 1 = Group, 2 = Tiered (Group then Map). Takes effect at next map change. This is defined here instead of in each map plugin so that nominations can be handled correctly.", _, true, 0.0, true, 2.0);
+	g_Cvar_Runoffs = CreateConVar("mapchoices_runoffs", "1", "Are runoff votes enabled?", _, true, 0.0, true, 1.0);
+	g_Cvar_RunoffPercent = CreateConVar("mapchoices_runoffpercent", "50", "If a map doesn't get at least this percent of votes, hold a runoff", _, true, 0.0, true, 100.0);
+	g_Cvar_NoVote = CreateConVar("mapchoices_novote", "1", "If no one votes, should MapChoices select a choice at random?", _, true, 0.0, true, 1.0);
+	g_Cvar_NoVoteButton = CreateConVar("mapchoices_novotebutton", "0", "Add No Vote button to votes?", _, true, 0.0, true, 1.0);
 	
 	// Core map vote starting stuff
 	
@@ -704,10 +713,38 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 {
 	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(GetNativeCell(1));
 	
-	ArrayList items = view_as<int>(GetNativeCell(2));
-	ArrayList votes = view_as<int>(GetNativeCell(3));
+	ArrayList items = view_as<ArrayList>(GetNativeCell(2));
+	ArrayList votes = view_as<ArrayList>(GetNativeCell(3));
+	bool canceled = GetNativeCell(4);
+	
+	if (canceled)
+	{
+		if (items.Length > 0)
+		{
+			if (g_Cvar_NoVote.BoolValue)
+			{
+				SelectWinner(items, votes);
+			}
+			else
+			{
+				Action result = Plugin_Continue;
+				Call_StartForward(g_Forward_HandlerVoteLost);
+				Call_PushCell(MapChoices_FailedNoVotes);
+				Call_Finish(result);
+				// TODO: Choose if we want to do anything with result
+			}
+		}
+		
+		return;
+	}
 	
 	// TODO Finish this, remove next two natives.
+}
+
+// Select a winner or pass control back
+void SelectWinner(ArrayList items, ArrayList votes)
+{
+	// TODO Logic to select winner.
 }
 
 public int Native_VoteSucceeded(Handle plugin, int numParams)

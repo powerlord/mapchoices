@@ -46,6 +46,9 @@ ConVar g_Cvar_Winlimit;
 ConVar g_Cvar_Maxrounds;
 
 ConVar g_Cvar_VoteNextLevel;
+ConVar g_Cvar_RestartMatchAtEnd;
+ConVar g_Cvar_ChangeMapAtEnd;
+
 ConVar g_Cvar_Bonusroundtime;
 ConVar g_Cvar_Halftime;
 ConVar g_Cvar_MatchClinch;
@@ -84,7 +87,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	if (GetEngineVersion() != Engine_CSGO)
 	{
 		strcopy(error, err_max, "Plugin is for CS:GO only.");
-		return APLRes_Failure;
+		return APLRes_SilentFailure;
 	}
 	
 	return APLRes_Success;
@@ -98,6 +101,9 @@ public void OnPluginStart()
 	g_Cvar_Maxrounds = FindConVar("mp_maxrounds");
 
 	g_Cvar_VoteNextLevel = FindConVar("mp_endmatch_votenextmap");
+	g_Cvar_RestartMatchAtEnd = FindConVar("mp_match_end_restart");
+	g_Cvar_ChangeMapAtEnd = FindConVar("mp_match_end_changelevel");
+	
 	g_Cvar_Bonusroundtime = FindConVar("mp_round_restart_delay");
 	g_Cvar_Halftime = FindConVar("mp_halftime");
 	g_Cvar_MatchClinch = FindConVar("mp_match_can_clinch");
@@ -105,7 +111,6 @@ public void OnPluginStart()
 	HookEvent("round_end", Event_RoundEnd);
 	HookEvent("cs_intermission", Event_Intermission);
 	HookEvent("announce_phase_end", Event_PhaseEnd);
-	
 }
 
 public void OnMapStart()
@@ -157,6 +162,8 @@ public void OnConfigsExecuted()
 	}
 	
 	g_Cvar_VoteNextLevel.BoolValue = false;
+	g_Cvar_RestartMatchAtEnd.BoolValue = false;
+	g_Cvar_ChangeMapAtEnd.BoolValue = true;
 }
 
 // CS:GO can switch teams at halftime, these events are to make sure we switch scores properly
