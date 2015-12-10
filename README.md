@@ -1,6 +1,10 @@
 # MapChoices
 A ground-up rewrite of the MapChooser system
 
+# This project is in alpha and is not yet suitable for use
+
+[<img src="https://travis-ci.org/powerlord/mapchoices.svg?branch=master" alt="Master status"/>](https://travis-ci.org/powerlord/mapchoices)
+
 ## Why do a rewrite?
 
 MapChooser is looking a bit long in the tooth.  Rather than continuing to shove more and more fixes into MapChooser
@@ -28,8 +32,8 @@ SourceMod 1.8 supports both the FindMap and GetMapDisplayName functions.
   - This resolves "fuzzy" names to their real names.
   - This resolves Workshop short map names to their full paths.
 - GetMapDisplayName is used to get a "natural" name for a Workshop map.
-  - For CS:GO, this changes workshop/125488374 or workshop/125488374/de_dust2_se to de_dust2_se
-  - For TF2, this changes workshop/454118349 or workshop/cp_glassworks_rc6a.ugc454118349 to cp_glassworks_rc6a
+  - For CS:GO, this changes `workshop/125488374` or `workshop/125488374/de_dust2_se` to `de_dust2_se`
+  - For TF2, this changes `workshop/454118349` or `workshop/cp_glassworks_rc6a.ugc454118349` to `cp_glassworks_rc6a`
 
 ## What's the current status of MapChoices?
 
