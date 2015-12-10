@@ -117,7 +117,7 @@ public void OnPluginStart()
 	HookEvent("round_end", Event_RoundEnd);
 	HookEvent("player_death", Event_PlayerDeath);
 	
-	AutoExecConfig(true, "mapchoices_mapend");
+	AutoExecConfig(true, "mapchoices/mapchoices-mapend");
 }
 
 public void OnMapStart()

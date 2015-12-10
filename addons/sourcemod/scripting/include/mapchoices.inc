@@ -272,6 +272,8 @@ stock void MapChoices_CloseMapList(ArrayList &mapList)
 
 /**
  * Delete a single map entry
+ * 
+ * @param mapData			The mapdata_t whose attributes lists should be deleted
  */
 stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
 {
@@ -279,12 +281,23 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
 	delete mapData[MapData_GroupAttributes];
 }
 
+/**
+ * Delete a single group entry
+ * 
+ * @param groupData		The groupdata_t whose attributes lists should be deleted
+ */
 stock void MapChoices_DeleteGroupData(int groupData[groupdata_t])
 {
 	delete groupData[GroupData_GroupAttributes];
 }
 
-stock void MapChoices_CopyMapData(int mapData[mapdata_t], int mapDataCopy[mapdata_t])
+/**
+ * Create a deep copy of a mapdata_t instance
+ * 
+ * @param mapData			The mapdata_t to copy
+ * @param mapDataCopy		The empty mapdata_t you are copying data into.
+ */
+stock void MapChoices_CopyMapData(const int mapData[mapdata_t], int mapDataCopy[mapdata_t])
 {
 	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
 	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
@@ -293,21 +306,39 @@ stock void MapChoices_CopyMapData(int mapData[mapdata_t], int mapDataCopy[mapdat
 	CopyStringMap(mapData[MapData_GroupAttributes], mapDataCopy[MapData_GroupAttributes]);
 }
 
-stock void MapChoices_CopyGroupData(int groupData[groupdata_t], int groupDataCopy[groupdata_t])
+/**
+ * Create a deep copy of a groupdata_t instance
+ * 
+ * @param groupData		The groupdata_t to copy
+ * @param groupDataCopy	The empty groupdata_t to copy data into.
+ */
+stock void MapChoices_CopyGroupData(const int groupData[groupdata_t], int groupDataCopy[groupdata_t])
 {
 	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
 	
 	CopyStringMap(groupData[GroupData_GroupAttributes], groupDataCopy[GroupData_GroupAttributes]);
 }
 
-stock void MapChoices_CopyGroupDataToMapData(int groupData[groupdata_t], int mapData[mapdata_t])
+/**
+ * Create a deep copy of a groupdata_t instance, but output into a mapdata_t
+ * 
+ * @param groupData		The groupdata_t to copy
+ * @param mapData			The mapdata_t to copy data into.
+ */
+stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], int mapData[mapdata_t])
 {
 	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), groupData[GroupData_Group]);
 	
 	CopyStringMap(groupData[GroupData_GroupAttributes], mapData[MapData_GroupAttributes]);
 }
 
-static stock void CopyStringMap(StringMap original, StringMap copy)
+/**
+ * An internal funtion to copy a StringMap that contains MapChoices attributes
+ * 
+ * @param original	The StringMap to copy
+ * @param copy		The StringMap to copy into.  If it is null, it will be created
+ */
+static stock void CopyStringMap(const StringMap original, StringMap copy)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
@@ -331,6 +362,54 @@ static stock void CopyStringMap(StringMap original, StringMap copy)
 	}
 	
 	delete snapshot;
+}
+
+/**
+ * Check if an ArrayList contains a mapData array with the specified group and map.
+ * 
+ * BOTH the group and map must match.
+ * 
+ * Note: This command will use FindMap to resolve both the named map and map in the ArrayList.
+ * This means that the command works for both workshop and non-workshop maps.
+ * 
+ * If FindMap returns FindMap_NotFound for either item, the item will be skipped.
+ * 
+ * @param mapList		The Map List to search
+ * @param group		The group to find.
+ * @param map			The map to find.
+ * 
+ * @return 			array position or -1 if group and map were not found
+ */
+stock int FindMapInMapList(ArrayList mapList, const char[] group, const char[] map)
+{
+	if (strlen(group) <= 0 || strlen(map) <= 0)
+	{
+		return -1;
+	}
+	
+	for (int i = 0; i < mapList.Length; i++)
+	{
+		int mapData[mapdata_t];
+		mapList.GetArray(i, mapData, sizeof(mapData));
+		
+		if (!StrEqual(mapData[MapData_Group], group, false))
+		{
+			continue;
+		}
+
+		char resolvedMap1[PLATFORM_MAX_PATH], resolvedMap2[PLATFORM_MAX_PATH];
+		if (FindMap(mapData[MapData_Map], resolvedMap1, sizeof(resolvedMap1)) == FindMap_NotFound || FindMap(map, resolvedMap2, sizeof(resolvedMap2)) == FindMap_NotFound)
+		{
+			continue;
+		}
+
+		if (StrEqual(resolvedMap1, resolvedMap2))
+		{
+			return i;
+		}
+	}
+	
+	return -1;
 }
 
 /**

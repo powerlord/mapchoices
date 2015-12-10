@@ -330,27 +330,6 @@ stock bool RemoveClientMapNomination(int client)
 	g_MapNominations[client][NominationsData_Group][0] = '\0';
 }
 
-stock int FindMapInMapList(const char[] group, const char[] map)
-{
-	if (strlen(group) <= 0 || strlen(map) <= 0)
-	{
-		return -1;
-	}
-	
-	for (int i = 0; i < g_MapList.Length; i++)
-	{
-		int mapData[mapdata_t];
-		g_MapList.GetArray(i, mapData, sizeof(mapData));
-		
-		if (StrEqual(mapData[MapData_Map], map) && StrEqual(mapData[MapData_Group], group))
-		{
-			return i;
-		}
-	}
-	
-	return -1;
-}
-
 void InternalLoadMapList()
 {
 	// We're calling the external function here.  This way, if we move it to a subplugin, we can just copy/paste.

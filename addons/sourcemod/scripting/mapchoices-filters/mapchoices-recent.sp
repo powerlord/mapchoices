@@ -33,6 +33,7 @@
 #include <sourcemod>
 
 #include "../include/mapchoices" // Include our own file to gain access to enums and the like
+#include <multicolors>
 
 #pragma semicolon 1
 #pragma newdecls required
@@ -63,7 +64,7 @@ public void OnPluginStart()
 	
 	g_RecentMapList = new ArrayList(mapdata_t);
 	
-	AutoExecConfig(true, "mapchoices-recent");
+	AutoExecConfig(true, "mapchoices/mapchoices-recent");
 }
 
 public void OnAllPluginsLoaded()
@@ -73,7 +74,7 @@ public void OnAllPluginsLoaded()
 
 public void OnMapStart()
 {
-	if (g_Cvar_RecentMaps.IntValue)
+	if (g_Cvar_RecentMaps.IntValue > 0)
 	{
 		if (g_RecentMapList.Length >= g_Cvar_RecentMaps.IntValue)
 		{
@@ -86,40 +87,25 @@ public void OnMapStart()
 		
 		int mapData[mapdata_t];
 		
-		char mapGroup[MAX_GROUP_LENGTH];
+		char mapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 		MapChoices_GetCurrentMapGroup(mapGroup, sizeof(mapGroup));
 		
 		GetCurrentMap(mapData[MapData_Map], sizeof(mapData[MapData_Map]));
-		strcopy(mapData[MapData_MapGroup], sizeof(mapData[MapData_MapGroup]), mapGroup);
+		strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), mapGroup);
 		g_RecentMapList.PushArray(mapData);
 	}
 }
 
-public Action FilterMaps(const char[] mapGroup, const char[] map)
+public Action FilterMaps(const int mapData[mapdata_t])
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 	
-	for (int i = 0; i < g_RecentMapList.Length; i++)
+	if (FindMapInMapList(g_RecentMapList, mapData[MapData_Group], mapData[MapData_Map]) != -1)
 	{
-		int mapData[mapdata_t];
-		g_RecentMapList.GetArray(i, mapData);
-		
-		if (!StrEqual(mapGroup, mapData[MapData_MapGroup], false))
-		{
-			continue;
-		}
-		
-		char resolvedMap1[PLATFORM_MAX_PATH], resolvedMap2[PLATFORM_MAX_PATH];
-		FindMap(mapData[MapData_Map], resolvedMap1, sizeof(resolvedMap1));
-		FindMap(map, resolvedMap2, sizeof(resolvedMap2));
-		
-		if (StrEqual(resolvedMap2, resolvedMap1, false))
-		{
-			return Plugin_Handled;
-		}
+		return Plugin_Handled;
 	}
 	
 	return Plugin_Continue;

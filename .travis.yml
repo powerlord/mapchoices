@@ -8,7 +8,7 @@ addons:
       - g++-multilib
 
 install:
-  - wget http://www.sourcemod.net/smdrop/1.8/sourcemod-1.8.0-git5794-linux.tar.gz -O /tmp/sourcemod.tar.gz
+  - wget http://www.sourcemod.net/smdrop/1.8/sourcemod-1.8.0-git5800-linux.tar.gz -O /tmp/sourcemod.tar.gz
   - tar -xzvf /tmp/sourcemod.tar.gz
 
 before_script:
@@ -19,5 +19,7 @@ before_script:
 script:
   - ./spcomp mapchoices.sp
   - ./spcomp mapchoices-mapend.sp
-  - ./spcomp mapchoices-games/mapchoices-tf2.sp
+  - ./spcomp mapchoices-filters/mapchoices-recent.sp
   - ./spcomp mapchoices-games/mapchoices-csgo.sp
+  - ./spcomp mapchoices-games/mapchoices-tf2.sp
+  - ./spcomp mapchoices-votesystems/mapchoices-nativevotes.sp
