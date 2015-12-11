@@ -58,12 +58,18 @@ MapChoices_GameFlags g_GameFlags;
 
 //ConVars
 ConVar g_Cvar_Enabled;
+ConVar g_Cvar_ExtendCount;
+ConVar g_Cvar_ExtendRounds;
+ConVar g_Cvar_ExtendFrags;
+ConVar g_Cvar_ExtendTime;
+ConVar g_Cvar_VoteTime;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
 ConVar g_Cvar_WarningTime;
 ConVar g_Cvar_VoteType;
 ConVar g_Cvar_Runoffs;
 ConVar g_Cvar_RunoffPercent;
+ConVar g_Cvar_RunoffTime;
 ConVar g_Cvar_NoVote;
 ConVar g_Cvar_NoVoteButton;
 
@@ -80,6 +86,8 @@ ConVar g_Cvar_MaxRounds;
 // Global Forwards
 Handle g_Forward_MapVoteStarted;
 Handle g_Forward_MapVoteEnded;
+Handle g_Forward_WarningTimerStarted;
+Handle g_Forward_WarningTimerTicked;
 Handle g_Forward_NominationAdded;
 Handle g_Forward_NominationRemoved;
 
@@ -105,8 +113,7 @@ bool g_bTempIgnoreRoundEnd = false;
 // Vote completion stuff
 bool g_bMapVoteInProgress = false;
 bool g_bMapVoteCompleted = false;
-
-int g_VoteStartRound = 0;
+bool g_bMapChanged = false;
 
 ArrayList g_MapList = null;
 int g_Serial = -1;
@@ -115,9 +122,10 @@ char g_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 
 MapChoices_VoteType g_VoteType;
 
-//new Handle:m_ListLookup;
+bool g_bIsRunoff = false;
+MapChoices_MapChange g_When = MapChoicesMapChange_Instant;
 
-Handle g_hTimeLimitVote;
+//new Handle:m_ListLookup;
 
 #include "mapchoices/parse-mapchoices-config.inc"
 
@@ -154,8 +162,7 @@ public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max
 	CreateNative("MapChoices_InitiateVote", Native_InitiateVote);
 	
 	// Alternate Vote Handlers
-	CreateNative("MapChoices_VoteSucceeded", Native_VoteSucceeded);
-	CreateNative("MapChoices_VoteFailed", Native_VoteFailed);
+	CreateNative("MapChoices_VoteCompleted", Native_VoteCompleted);
 	CreateNative("MapChoices_RegisterVoteHandler", Native_RegisterVoteHandler);
 	CreateNative("MapChoices_UnregisterVoteHandler", Native_UnregisterVoteHandler);
 	
@@ -193,12 +200,18 @@ public void OnPluginStart()
 	
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
 	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
-	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 1.0, true, 15.0);
+	g_Cvar_ExtendCount = CreateConVar("mapchoices_extendcount", "3", "How many extensions are allowed per map", _, true, 0.0);
+	g_Cvar_ExtendRounds = CreateConVar("mapchoices_extendrounds", "2", "How many rounds to extend the map by per extension", _, true, 2.0);
+	g_Cvar_ExtendFrags = CreateConVar("mapchoices_extendfrags", "10", "How many frags to extend the map by. Only applies to games that use frags (HL2:DM, etc...)", _, true, 5.0);
+	g_Cvar_ExtendTime = CreateConVar("mapchoices_extendtime", "10", "How many minutes to extend the map by per extension", _, true, 5.0);
+	g_Cvar_VoteTime = CreateConVar("mapchoices_votetime", "20", "Map vote time (in seconds)", _, true, 10.0, true, 60.0);
+	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 5.0, true, 15.0);
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
 	g_Cvar_WarningTime = CreateConVar("mapchoices_warningtime", "15", "How many seconds before a vote starts do you want a warning timer to run. 0 = Disable", _, true, 0.0, true, 60.0);
 	g_Cvar_VoteType = CreateConVar("mapchoices_votetype", "0", "Vote type MaoChoices will use: 0 = Map, 1 = Group, 2 = Tiered (Group then Map). Takes effect at next map change. This is defined here instead of in each map plugin so that nominations can be handled correctly.", _, true, 0.0, true, 2.0);
 	g_Cvar_Runoffs = CreateConVar("mapchoices_runoffs", "1", "Are runoff votes enabled?", _, true, 0.0, true, 1.0);
 	g_Cvar_RunoffPercent = CreateConVar("mapchoices_runoffpercent", "50", "If a map doesn't get at least this percent of votes, hold a runoff", _, true, 0.0, true, 100.0);
+	g_Cvar_RunoffTime = CreateConVar("mapchoices_runofftime", "5.0", "How long (in seconds) to wait before starting a runoff vote.", _, true, 5.0, true, 15.0);
 	g_Cvar_NoVote = CreateConVar("mapchoices_novote", "1", "If no one votes, should MapChoices select a choice at random?", _, true, 0.0, true, 1.0);
 	g_Cvar_NoVoteButton = CreateConVar("mapchoices_novotebutton", "0", "Add No Vote button to votes?", _, true, 0.0, true, 1.0);
 	
@@ -219,6 +232,8 @@ public void OnPluginStart()
 	// State change forwards
 	g_Forward_MapVoteStarted = CreateGlobalForward("MapChoices_OnMapVoteStarted", ET_Ignore, Param_Cell);
 	g_Forward_MapVoteEnded = CreateGlobalForward("MapChoices_OnMapVoteEnded", ET_Ignore, Param_String, Param_String, Param_Cell);
+	g_Forward_WarningTimerStarted = CreateGlobalForward("MapChoices_OnWarningTimerStarted", ET_Ignore, Param_Cell, Param_Cell);
+	g_Forward_WarningTimerTicked = CreateGlobalForward("MapChoices_OnWarningTimerTicked", ET_Ignore, Param_Cell);
 	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	
@@ -251,6 +266,11 @@ public void OnMapStart()
 	
 	g_bMapVoteInProgress = false;
 	g_bMapVoteCompleted = false;
+}
+
+public void OnMapEnd()
+{
+	g_bMapChanged = true;
 }
 
 public void OnConfigsExecuted()
@@ -316,12 +336,8 @@ stock bool RemoveMapFromNominations(const char[] group, const char[] map, int cl
 			removed = true;
 		}
 		
-		Call_StartForward(g_Forward_NominationRemoved);
-		Call_PushString(nominationsData[NominationsData_Map]);
-		Call_PushString(nominationsData[NominationsData_Group]);
-		Call_PushCell(client);
-		Call_PushCell(removed);
-		Call_Finish();
+		Forward_NominationRemoved(nominationsData[NominationsData_Map], nominationsData[NominationsData_Group],
+			client, removed);
 		
 		return true;
 	}
@@ -349,7 +365,66 @@ void InternalLoadMapList()
 	
 }
 
-void StartVote(MapChoices_MapChange when, ArrayList mapList)
+void InitializeVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteType voteType)
+{
+	// This is set to false here as it is only used after this point
+	g_bMapChanged = false;
+	if (g_Cvar_WarningTime.IntValue == 0)
+	{
+		StartVote(when, itemList, voteType);
+	}
+	else
+	{
+		Forward_WarningTimerStarted(g_Cvar_WarningTime.IntValue, g_bIsRunoff);
+		DataPack data;
+		CreateDataTimer(1.0, Timer_WarningTimer, data, TIMER_REPEAT);
+		data.WriteCell(g_Cvar_WarningTime.IntValue);
+		data.WriteCell(when);
+		data.WriteCell(itemList);
+		data.WriteCell(voteType);
+	}
+}
+
+public Action Timer_WarningTimer(Handle timer, DataPack data)
+{
+	static int timePassed = 0;
+	
+	data.Reset();
+
+	MapChoices_MapChange when = data.ReadCell();
+	ArrayList itemList = data.ReadCell();
+	MapChoices_VoteType voteType = data.ReadCell();
+	
+	// Clean up Handle if map changed on us
+	if (g_bMapChanged)
+	{
+		timePassed = 0;
+		delete itemList;
+		return Plugin_Stop;
+	}
+	
+	timePassed++;
+	
+	int totalTime = data.ReadCell();
+	
+	if (totalTime == timePassed)
+	{
+		// Reset timePassed to 0
+		timePassed = 0;
+		
+		// TODO Finish this
+		
+		StartVote(when, itemList, voteType);
+		return Plugin_Handled;
+	}
+	
+	Forward_WarningTimerTicked(totalTime - timePassed);
+	
+	return Plugin_Continue;
+}
+
+// This should not be called directly, call the command that starts the vote timer instead
+void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteType voteType)
 {
 	if (g_bMapVoteInProgress || g_bMapVoteCompleted)
 	{
@@ -359,40 +434,75 @@ void StartVote(MapChoices_MapChange when, ArrayList mapList)
 	if (Core_IsVoteInProgress())
 	{
 		DataPack data;
-		CreateDataTimer(g_Cvar_RetryTime.FloatValue, Timer_Retry, data, TIMER_FLAG_NO_MAPCHANGE);
+		CreateDataTimer(g_Cvar_RetryTime.FloatValue, Timer_Retry, data);
 		data.WriteCell(when);
-		data.WriteCell(mapList);
+		data.WriteCell(itemList);
+		data.WriteCell(voteType);
 		data.Reset();
 	}
 
-	if (mapList == null)
+	int limit = GetVoteLimit();
+	if (itemList == null || itemList.Length == 0)
 	{
 		// Figure out which maps we need to fetch
 		
 		// will involve a call to LoadMapList
 		InternalLoadMapList();
+		// TODO: Populate the map/group list from nominations
+		
+		// TODO Fill up the remaining map/groups from our internal list
 	}
 	
 	// TODO the rest of the logic to start the vote
+	
+	g_When = when;
+	g_bMapVoteInProgress = true;
+	
+	Action result = Forward_VoteStart(g_Cvar_VoteTime.IntValue, voteType, itemList, g_Cvar_NoVoteButton.BoolValue);
+	
+	if (result == Plugin_Continue)
+	{
+		// TODO Fire off our internal vote
+	}
+	
+	// Clean up itemList here
+	delete itemList;
+}
+
+int GetVoteLimit()
+{
+	int limit = g_Cvar_VoteItems.IntValue;
+	if (g_OverrideVoteLimit > -1 && g_OverrideVoteLimit < limit)
+	{
+		limit = g_OverrideVoteLimit;
+	}
+	
+	return limit;
 }
 
 public Action Timer_Retry(Handle timer, DataPack data)
 {
 	MapChoices_MapChange when = data.ReadCell();
-	ArrayList mapList = data.ReadCell();
+	ArrayList itemList = data.ReadCell();
+	MapChoices_VoteType voteType = data.ReadCell();
+
+	// Clean up Handle if map changed on us
+	if (g_bMapChanged)
+	{
+		delete itemList;
+		return Plugin_Stop;
+	}
 	
-	StartVote(when, mapList);
+	StartVote(when, itemList, voteType);
+	
+	return Plugin_Continue;
 }
 
 bool Core_IsVoteInProgress()
 {
 	bool inProgress = false;
 	
-	Action result = Plugin_Continue;
-	
-	Call_StartForward(g_Forward_HandlerIsVoteInProgress);
-	Call_PushCellRef(inProgress);
-	Call_Finish(result);
+	Action result = Forward_IsVoteIsProgress(inProgress);
 	
 	if (result >= Plugin_Handled)
 	{
@@ -404,15 +514,12 @@ bool Core_IsVoteInProgress()
 
 bool CheckMapFilter(const int mapData[mapdata_t])
 {
-	if (strlen(mapData[MapData_Group]) <= 0 || strlen(mapData[MapData_Map]) <= 0)
+	if (mapData[MapData_Group][0] == '\0' || mapData[MapData_Map][0] == '\0')
 	{
 		return false;
 	}
 	
-	Action result = Plugin_Continue;
-	Call_StartForward(g_Forward_MapFilter);
-	Call_PushArray(mapData, sizeof(mapData));
-	Call_Finish(result);
+	Action result = Forward_CheckMapFilter(mapData);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -428,16 +535,136 @@ bool CheckGroupFilter(const int groupData[groupdata_t])
 		return false;
 	}
 	
-	Action result = Plugin_Continue;
-	Call_StartForward(g_Forward_GroupFilter);
-	Call_PushArray(groupData, sizeof(groupData));
-	Call_Finish(result);
+	Action result = Forward_CheckGroupFilter(groupData);
 	if (result >= Plugin_Handled)
 	{
 		return false;
 	}
 	
 	return true;
+}
+
+void ExtendMap()
+{
+	if (g_Cvar_Winlimit != null && g_Cvar_Winlimit.IntValue > 0)
+	{
+		g_Cvar_Winlimit.IntValue += g_Cvar_ExtendRounds.IntValue;
+	}
+	
+	if (g_Cvar_MaxRounds != null && g_Cvar_MaxRounds.IntValue > 0)
+	{
+		g_Cvar_MaxRounds.IntValue += g_Cvar_ExtendRounds.IntValue;
+	}
+
+	if (g_Cvar_FragLimit != null && g_Cvar_FragLimit.IntValue > 0)
+	{
+		g_Cvar_FragLimit.IntValue += g_Cvar_ExtendFrags.IntValue;
+	}
+	
+	int time;
+	if (GetMapTimeLimit(time) && time > 0)
+	{
+		ExtendMapTimeLimit(g_Cvar_ExtendTime.IntValue * 60);
+	}
+}
+
+// Select a winner or pass control back
+void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, int totalVotes)
+{
+	if (items.Length != votes.Length)
+	{
+		LogError("SelectWinner called with uneven ArrayLists: items: %d, votes: %d", items.Length, votes.Length);
+		return;
+	}
+	
+	int itemVotes = votes.Get(0);
+	
+	int votePercent = RoundFloat(float(itemVotes) / float(totalVotes) * 100.0);
+	
+	if (votePercent < g_Cvar_RunoffPercent.IntValue && !g_bIsRunoff)
+	{
+		// TODO: Choose if we want to do anything with result
+		Forward_VoteLost(MapChoices_FailedQuorum);
+		
+		ArrayList newItems = new ArrayList(mapdata_t);
+		
+		int count = 0;
+		int previousItemVotes;
+		
+		for (int i = 0; i < items.Length; i++)
+		{
+			previousItemVotes = itemVotes;
+			itemVotes = votes.Get(count);
+
+			// Break if we are past 2 items and the vote count isn't the same as the previous count.
+			if (i >= 2 && itemVotes != previousItemVotes)
+			{
+				break;
+			}
+			int mapData[mapdata_t];
+			items.GetArray(count, mapData, sizeof(mapData));
+			newItems.PushArray(mapData, sizeof(mapData));
+		}
+		
+		// Start the runoff vote
+		g_bIsRunoff = true;
+		InitializeVote(g_When, newItems, voteType);
+		delete newItems;
+	}
+	else
+	{
+		int mapData[mapdata_t];
+		items.GetArray(0, mapData, sizeof(mapData));
+		
+		Forward_VoteWon(mapData);
+		
+		if (voteType == MapChoices_GroupVote)
+		{
+			PrintToChatAll("%t", "MapChoices Group Voting Finished", mapData[MapData_Group], votePercent, totalVotes);
+			
+			if (g_VoteType == MapChoices_TieredVote)
+			{
+				// TODO Set up map vote
+			}
+			else
+			{
+				// TODO Select random non-recently played map
+			}
+		}
+		else if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND))
+		{
+			PrintToChatAll("%t", "MapChoices Current Map Extended", votePercent, totalVotes);
+			ExtendMap();
+		}
+		else if (StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
+		{
+			PrintToChatAll("%t", "MapChoices Current Map Stays", votePercent, totalVotes);
+		}
+		else
+		{
+			char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
+			MapChoices_GetMapDisplayString(mapData, displayString, sizeof(displayString));
+			
+			if (StrEqual(mapData[MapData_Group], MAPCHOICES_DEFAULTGROUP))
+			{
+				PrintToChatAll("%t", "MapChoices Map Voting Finished Simple", displayString,
+					votePercent, totalVotes);
+			}
+			else
+			{
+				PrintToChatAll("%t", "MapChoices Map Voting Finished Advanced", displayString,
+					mapData[MapData_Group], votePercent, totalVotes);
+			}
+			
+			SetNextMap(mapData[MapData_Map]);
+		}
+		
+		
+		char displayName[PLATFORM_MAX_PATH];
+		GetMapDisplayName(mapData[MapData_Map], displayName, sizeof(displayName));
+		
+		PrintToChatAll("%t", "MapChoices_MapVoteWin", mapData[MapData_Group], displayName);
+	}
 }
 
 MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owner)
@@ -472,12 +699,7 @@ MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owne
 		newMap = true;
 	}
 	
-	Call_StartForward(g_Forward_NominationAdded);
-	Call_PushString(map);
-	Call_PushString(group);
-	Call_PushCell(owner);
-	Call_PushCell(newMap);
-	Call_Finish();
+	Forward_NominationAdded(group, map, owner, newMap);
 	
 	return newMap ? MapChoicesNominateResult_Added : MapChoicesNominateResult_AlreadyInVote;
 }
@@ -500,16 +722,11 @@ public void Event_RoundEnd(Event event, const char[] name, bool dontBroadcast)
 
 void ChangeMap(bool isRoundEnd)
 {
-	Action result = Plugin_Continue;
-	
 	char map[PLATFORM_MAX_PATH];
 	
 	GetNextMap(map, sizeof(map));
 	
-	Call_StartForward(g_Forward_ChangeMap);
-	Call_PushString(map);
-	Call_PushCell(isRoundEnd);
-	Call_Finish(result);
+	Action result = Forward_ChangeMap(map, isRoundEnd);
 	
 	if (result < Plugin_Handled)
 	{
@@ -583,6 +800,148 @@ void EndGame()
 //	ForceChangeLevel(map, "Map Vote");
 //}
 
+////////////////////////////////////////////////////////////////////////
+// Forwards
+
+// Public
+
+void Forward_MapVoteStarted()
+{
+	Call_StartForward(g_Forward_MapVoteStarted);
+	Call_PushCell(g_bIsRunoff);
+	Call_Finish();
+}
+
+void Forward_MapVoteEnded(const char[] group, const char[] map)
+{
+	Call_StartForward(g_Forward_MapVoteEnded);
+	Call_PushString(group);
+	Call_PushString(map);
+	Call_Finish();
+}
+
+void Forward_WarningTimerStarted(int seconds, bool runoff)
+{
+	Call_StartForward(g_Forward_WarningTimerStarted);
+	Call_PushCell(seconds);
+	Call_PushCell(runoff);
+	Call_Finish();
+}
+
+void Forward_WarningTimerTicked(int seconds)
+{
+	Call_StartForward(g_Forward_WarningTimerTicked);
+	Call_PushCell(seconds);
+	Call_Finish();
+}
+
+void Forward_NominationAdded(const char[] group, const char[] map, int owner, bool newMap)
+{
+	Call_StartForward(g_Forward_NominationAdded);
+	Call_PushString(group);
+	Call_PushString(map);
+	Call_PushCell(owner);
+	Call_PushCell(newMap);
+	Call_Finish();
+}
+
+void Forward_NominationRemoved(const char[] group, const char[] map, int owner, bool removed)
+{
+	Call_StartForward(g_Forward_NominationRemoved);
+	Call_PushString(group);
+	Call_PushString(map);
+	Call_PushCell(owner);
+	Call_PushCell(removed);
+	Call_Finish();
+}
+
+// Private
+
+Action Forward_VoteStart(int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_HandlerVoteStart);
+	Call_PushCell(duration);
+	Call_PushCell(voteType);
+	Call_PushCell(itemList);
+	Call_PushCell(noVoteOption);
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_VoteCancel()
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_HandlerCancelVote);
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_IsVoteIsProgress(bool &isInProgress)
+{
+	Action result = Plugin_Continue;
+	
+	Call_StartForward(g_Forward_HandlerIsVoteInProgress);
+	Call_PushCellRef(isInProgress);
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_VoteLost(MapChoices_VoteFailedType failType)
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_HandlerVoteLost);
+	Call_PushCell(failType);
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_VoteWon(const int mapData[mapdata_t])
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_HandlerVoteWon);
+	Call_PushArray(mapData, sizeof(mapData));
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_CheckMapFilter(const int mapData[mapdata_t])
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_MapFilter);
+	Call_PushArray(mapData, sizeof(mapData));
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_CheckGroupFilter(const int groupData[groupdata_t])
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_GroupFilter);
+	Call_PushArray(groupData, sizeof(groupData));
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_ChangeMap(const char[] map, bool isRoundEnd)
+{
+	Action result = Plugin_Continue;
+	Call_StartForward(g_Forward_ChangeMap);
+	Call_PushString(map);
+	Call_PushCell(isRoundEnd);
+	Call_Finish(result);
+	
+	return result;
+}
+
+////////////////////////////////////////////////////////////////////////
 // Natives
 
 // native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const char[] map, int owner);
@@ -706,7 +1065,9 @@ public int Native_InitiateVote(Handle plugin, int numParams)
 
 	// TODO: Fix this to handle Group and Tier votes
 	
-	StartVote(when, mapList);
+	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(g_Cvar_VoteType.IntValue);
+	
+	InitializeVote(when, mapList.Clone(), voteType);
 }
 
 public int Native_VoteCompleted(Handle plugin, int numParams)
@@ -715,7 +1076,8 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 	
 	ArrayList items = view_as<ArrayList>(GetNativeCell(2));
 	ArrayList votes = view_as<ArrayList>(GetNativeCell(3));
-	bool canceled = GetNativeCell(4);
+	int totalVotes = GetNativeCell(4);
+	bool canceled = GetNativeCell(5);
 	
 	if (canceled)
 	{
@@ -723,15 +1085,12 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 		{
 			if (g_Cvar_NoVote.BoolValue)
 			{
-				SelectWinner(items, votes);
+				SelectWinner(voteType, items, votes, totalVotes);
 			}
 			else
 			{
-				Action result = Plugin_Continue;
-				Call_StartForward(g_Forward_HandlerVoteLost);
-				Call_PushCell(MapChoices_FailedNoVotes);
-				Call_Finish(result);
 				// TODO: Choose if we want to do anything with result
+				Forward_VoteLost(MapChoices_FailedNoVotes);
 			}
 		}
 		
@@ -739,64 +1098,6 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 	}
 	
 	// TODO Finish this, remove next two natives.
-}
-
-// Select a winner or pass control back
-void SelectWinner(ArrayList items, ArrayList votes)
-{
-	// TODO Logic to select winner.
-}
-
-public int Native_VoteSucceeded(Handle plugin, int numParams)
-{
-	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(GetNativeCell(1));
-	
-	int mapData[mapdata_t];
-	GetNativeArray(2, mapData, sizeof(mapData));
-	
-	int votes = GetNativeCell(3);
-	int votesTotal = GetNativeCell(4);
-	
-	float percent = float(votes) / float(votesTotal);
-	
-	switch (g_VoteType)
-	{
-		case MapChoices_MapVote:
-		{
-			char displayName[PLATFORM_MAX_PATH];
-			GetMapDisplayName(mapData[MapData_Map], displayName, sizeof(displayName));
-			
-			SetNextMap(mapData[MapData_Map]);
-			PrintToChatAll("%t", "MapChoices_MapVoteWin", mapData[MapData_Group], displayName);
-			
-		}
-		
-		case MapChoices_GroupVote:
-		{
-			
-		}
-		
-		case MapChoices_TieredVote:
-		{
-			switch (voteType)
-			{
-				case MapChoices_MapVote:
-				{
-				}
-				
-				case MapChoices_GroupVote:
-				{
-					
-				}
-			}
-		}
-	}
-	
-}
-
-public int Native_VoteFailed(Handle plugin, int numParams)
-{
-	// TODO Implement this
 }
 
 // native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);

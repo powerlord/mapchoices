@@ -60,7 +60,7 @@ public Plugin myinfo = {
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
 	if (!NativeVotes_IsVoteTypeSupported(NativeVotesType_NextLevelMult) ||
-	!NativeVotes_IsVoteTypeSupported(NativeVotesType_Custom_Mult))
+	    !NativeVotes_IsVoteTypeSupported(NativeVotesType_Custom_Mult))
 	{
 		strcopy(error, err_max, "Multiple type map vote not supported.");
 		return APLRes_Failure;
@@ -111,7 +111,7 @@ public Action Handler_VoteLost(MapChoices_VoteFailedType failType)
 }
 
 // If Extend or No Change are in a vote, they should have been passed in the itemList from core
-public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, bool noVoteOption)
+public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
@@ -196,7 +196,7 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	
 	g_NativeVote.NoVoteButton = noVoteOption;
 	
-	g_NativeVote.DisplayVote(clients, numClients, duration);
+	g_NativeVote.DisplayVoteToAll(duration);
 	
 	return Plugin_Handled;
 }
@@ -337,7 +337,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 				
 			}
 
-			MapChoices_VoteCompleted(g_VoteType, items, votes, true);
+			MapChoices_VoteCompleted(g_VoteType, items, votes, 0, true);
 			delete items;
 			delete votes;
 		}
@@ -385,7 +385,7 @@ public void Handler_MapVoteFinish(NativeVote vote,
 		votes.Push(item_votes[i]);
 	}
 	
-	MapChoices_VoteCompleted(g_VoteType, items, votes);
+	MapChoices_VoteCompleted(g_VoteType, items, votes, num_votes);
 	delete items;
 	delete votes;
 	
@@ -469,13 +469,13 @@ public void Handler_MapVoteFinish(NativeVote vote,
 
 void DisplayPass(NativeVote vote, int mapData[mapdata_t])
 {
-	if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
-	{
-		vote.DisplayPassEx(NativeVotesPass_Extend);
-	}
-	else if (g_VoteType == MapChoices_GroupVote)
+	if (g_VoteType == MapChoices_GroupVote)
 	{
 		vote.DisplayPass(mapData[MapData_Group]);
+	}
+	else if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
+	{
+		vote.DisplayPassEx(NativeVotesPass_Extend);
 	}
 	else
 	{

@@ -28,6 +28,12 @@
 		"en"		"Map voting has finished. The next map will be {1}. (Received {2}%% of {3} votes)"
 	}
 	
+	"MapChoices Current Map Extended"
+	{
+		"#format"		"{1:i},{2:i}"
+		"en"			"The current map has been extended. (Received {1}%% of {2} votes)"
+	}
+	
 	"MapChoices Current Map Stays"
 	{
 		"#format"	"{1:i},{2:i}"

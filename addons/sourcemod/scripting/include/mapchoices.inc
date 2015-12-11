@@ -338,7 +338,7 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
  * @param original	The StringMap to copy
  * @param copy		The StringMap to copy into.  If it is null, it will be created
  */
-static stock void CopyStringMap(const StringMap original, StringMap copy)
+static stock void CopyStringMap(StringMap original, StringMap copy)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
@@ -610,19 +610,33 @@ forward void MapChoices_OnMapVoteStarted(bool runoff);
 /**
  * A map vote just ended and a map won.
  * 
+ * @param group	The map's group.  Will be MAPCHOICES_DEFAULTGROUP if running in classic mode.
  * @param map		The map that was voted in.  This will be equal to the constant
  *                 MAPCHOICES_NOCHANGE if the map is not changing
  * @param instant	True if MapChoices is going to instantly change the map, false if not.
- * @param group	If the map was part of a group, which group it was from.
  * @noreturn
  */
 forward void MapChoices_OnMapVoteEnded(const char[] group, const char[] map, bool instant);
 
 /**
+ * A warning timer just started.
+ * 
+ * @param totalTime	The total length of time that the timer will tick
+ * @param runoff		True if the vote is a runoff vote.
+ */
+forward void MapChoices_OnWarningTimerStarted(int totalTime, bool runoff);
+
+/**
+ * During a warning timer, this will fire every time the timer ticks
+ * 
+ * @param time	The number of seconds left before the vote starts
+ */
+forward void MapChoices_OnWarningTimerTicked(int time);
+
+/**
  * A map was added to the nominations list.
  * 
- * NOTE: 
- * 
+ * @param group	The group of the map that was added.
  * @param map		The map that was added.
  * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
  * @param newMap	True if the map was added to the nominations list for the first time, false if it was already nominated
@@ -632,6 +646,7 @@ forward void MapChoices_OnNominationAdded(const char[] group, const char[] map, 
 /**
  * A map has been removed from the nominations list.
  * 
+ * @param group	The group of the map that was removed.
  * @param map		The map that was removed.
  * @param owner	The user that added the map.
  * @param removed	True if this map was removed entirely, false if there are still nominations for it.
@@ -649,16 +664,11 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
  * @param duration		How long should the vote last?
  * @param voteType		Which vote type is this: Map or Group?
  * @param itemList		A flat ArrayList of items.
- * @param clients			Which clients is this vote being sent to?
- * @param numClients		How many clients is this being sent to?
- * @param quorum			What percent of votes (0.0 to 1.0) are needed for the vote to pass? 0.0 will tell the plugin to always pass.
- * @param noVotesSelect	If there are no votes, select a random item?
  * @param noVoteOption		Add the No Vote option to the menu?  May not be supported by alternative vote providers.
  * 
  * @return				Plugin_Handled to indicate that a vote system handled this vote start
  */
-typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, int[] clients, int numClients, 
-	bool noVoteOption);
+typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption);
 
 /**
  * Tells a vote system plugin to cancel a vote.
@@ -705,8 +715,10 @@ typedef MapChoices_HandlerVoteLost = function Action (MapChoices_VoteFailedType 
  * @param voteType		The vote type in question.  Can be Map or Group.
  * @param items			An ArrayList of mapdata_t for all items that got votes.
  * @param votes			An ArrayList containing the number of votes corresponding to each of the items above.
+ * @param totalVotes		The total number of votes cast
+ * @param canceled		True if the vote was canceled, false otherwise.
  */
-native void MapChoices_VoteCompleted(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, bool canceled=false);
+native void MapChoices_VoteCompleted(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, int totalVotes, bool canceled=false);
 
 /**
  * A Vote System plugin passed a vote.
