@@ -59,10 +59,14 @@ public Plugin myinfo = {
 
 public APLRes AskPluginLoad2(Handle myself, bool late, char[] error, int err_max)
 {
-	if (!NativeVotes_IsVoteTypeSupported(NativeVotesType_NextLevelMult))
+	if (!NativeVotes_IsVoteTypeSupported(NativeVotesType_NextLevelMult) ||
+	!NativeVotes_IsVoteTypeSupported(NativeVotesType_Custom_Mult))
 	{
 		strcopy(error, err_max, "Multiple type map vote not supported.");
+		return APLRes_Failure;
 	}
+	
+	return APLRes_Success;
 }
 
 public void OnPluginStart()
