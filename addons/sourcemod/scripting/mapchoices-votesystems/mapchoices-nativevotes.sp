@@ -43,10 +43,7 @@
 
 ConVar g_Cvar_Enabled;
 
-bool g_VoteInProgress;
-//float g_Quorum = 0.0;
 MapChoices_VoteType g_VoteType = MapChoices_MapVote;
-//bool g_NoVotesSelect = false;
 
 StringMap g_ItemData;
 
@@ -119,7 +116,6 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	
 	// We are naively assuming that NativeVotes_IsVoteInProgress was checked before our handler was called
 
-	g_VoteInProgress = true;
 	//g_Quorum = quorum;
 	g_VoteType = voteType;
 	//g_NoVotesSelect = noVotesSelect;
@@ -208,14 +204,9 @@ public Action Handler_CancelVote()
 		return Plugin_Continue;
 	}
 	
-	if (g_VoteInProgress)
+	if (NativeVotes_IsVoteInProgress())
 	{
-		if (NativeVotes_IsVoteInProgress())
-		{
-			NativeVotes_Cancel();
-		}
-		
-		g_VoteInProgress = false;
+		NativeVotes_Cancel();
 		return Plugin_Handled;
 	}
 	
@@ -242,6 +233,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 		{
 			// This *should* be called after the win/lose callbacks
 			vote.Close();
+			delete g_ItemData;
 			delete g_NativeVote;
 		}
 		
@@ -327,7 +319,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 					
 					*/
 					
-					for (int i = 0; i < num_items; i++)
+					for (int i = 0; i < vote.ItemCount; i++)
 					{
 						char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
 						int mapData[mapdata_t];
@@ -341,9 +333,6 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 				
 			}
 
-			ArrayList items = new ArrayList(mapdata_t);
-			ArrayList votes = new ArrayList();
-			
 			MapChoices_VoteCompleted(g_VoteType, items, votes, true);
 			delete items;
 			delete votes;
