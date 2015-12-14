@@ -40,13 +40,17 @@
 #pragma newdecls required
 #define VERSION "1.0.0 alpha 1"
 
+#define ERASE_MAP_NOMINATIONS -1
+
 // SM 1.6 style array to store nominations data
 // Note that NominationsData_Nominators is not used in g_MapNominations
 enum nominations_t
 {
 	String:NominationsData_Map[PLATFORM_MAX_PATH],
 	String:NominationsData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
-	ArrayList:NominationsData_Nominators
+	StringMap:NominationsData_MapAttributes,
+	StringMap:NominationsData_GroupAttributes,
+	ArrayList:NominationsData_Nominators,
 }
 
 // ArrayList of nominations_t
@@ -62,6 +66,7 @@ ConVar g_Cvar_ExtendCount;
 ConVar g_Cvar_ExtendRounds;
 ConVar g_Cvar_ExtendFrags;
 ConVar g_Cvar_ExtendTime;
+ConVar g_Cvar_DontChange;
 ConVar g_Cvar_VoteTime;
 ConVar g_Cvar_RetryTime;
 ConVar g_Cvar_VoteItems;
@@ -120,12 +125,21 @@ int g_Serial = -1;
 
 char g_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 
-MapChoices_VoteType g_VoteType;
+MapChoices_VoteType g_MasterVoteType;
 
 bool g_bIsRunoff = false;
 MapChoices_MapChange g_When = MapChoicesMapChange_Instant;
 
 //new Handle:m_ListLookup;
+
+int g_Extends = 0;
+
+//Temporary item data during a vote
+StringMap g_ItemData;
+MapChoices_VoteType g_VoteType;
+
+// Used during and after a vote
+char g_NextMapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 
 #include "mapchoices/parse-mapchoices-config.inc"
 
@@ -204,6 +218,7 @@ public void OnPluginStart()
 	g_Cvar_ExtendRounds = CreateConVar("mapchoices_extendrounds", "2", "How many rounds to extend the map by per extension", _, true, 2.0);
 	g_Cvar_ExtendFrags = CreateConVar("mapchoices_extendfrags", "10", "How many frags to extend the map by. Only applies to games that use frags (HL2:DM, etc...)", _, true, 5.0);
 	g_Cvar_ExtendTime = CreateConVar("mapchoices_extendtime", "10", "How many minutes to extend the map by per extension", _, true, 5.0);
+	g_Cvar_DontChange = CreateConVar("mapchoices_dontchange", "1", "Add \"Don't Change\" to instant votes such as rtv? 0 = no, 1 = yes", _, true, 0.0, true, 1.0);
 	g_Cvar_VoteTime = CreateConVar("mapchoices_votetime", "20", "Map vote time (in seconds)", _, true, 10.0, true, 60.0);
 	g_Cvar_RetryTime = CreateConVar("mapchoices_retrytime", "5.0", "How long (in seconds) to wait before we retry the vote if a vote is already running?", _, true, 5.0, true, 15.0);
 	g_Cvar_VoteItems = CreateConVar("mapchoices_voteitems", "6", "How many items should appear in each vote? This may be capped in alternate vote systems (TF2 NativeVotes caps to 5).", _, true, 2.0, true, 8.0);
@@ -248,7 +263,7 @@ public void OnPluginStart()
 	
 	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
-	g_MapList = new ArrayList(ByteCountToCells(PLATFORM_MAX_PATH));
+	g_MapList = new ArrayList(mapdata_t);
 	
 	HookEvent("round_end", Event_RoundEnd);
 	HookEventEx("round_win", Event_RoundEnd);
@@ -261,11 +276,20 @@ public void OnMapStart()
 {
 	InternalLoadMapList();
 	
+	g_Extends = 0;
+	
 	g_bChangeAtRoundEnd = false;
 	g_bTempIgnoreRoundEnd = false;
 	
 	g_bMapVoteInProgress = false;
 	g_bMapVoteCompleted = false;
+	
+	if (g_NextMapGroup[0] != '\0')
+	{
+		strcopy(g_MapGroup, sizeof(g_MapGroup), g_NextMapGroup);
+	}
+	
+	g_NextMapGroup[0] = '\0';
 }
 
 public void OnMapEnd()
@@ -275,7 +299,7 @@ public void OnMapEnd()
 
 public void OnConfigsExecuted()
 {
-	g_VoteType = view_as<MapChoices_VoteType>(g_Cvar_VoteType.IntValue);
+	g_MasterVoteType = view_as<MapChoices_VoteType>(g_Cvar_VoteType.IntValue);
 }
 
 public void OnClientDisconnect(int client)
@@ -305,6 +329,10 @@ stock int FindMapInNominations(const char[] group, const char[] map)
 	return -1;
 }
 
+/**
+ * 
+ * 
+ */
 stock bool RemoveMapFromNominations(const char[] group, const char[] map, int client = 0)
 {
 	if (strlen(group) <= 0 || strlen(map) <= 0)
@@ -320,29 +348,63 @@ stock bool RemoveMapFromNominations(const char[] group, const char[] map, int cl
 		int nominationsData[nominations_t];
 		g_Array_NominatedMaps.GetArray(location, nominationsData, sizeof(nominationsData));
 		
-		int pos = nominationsData[NominationsData_Nominators].FindValue(client);
-		
-		// This should always exist unless something went wrong
-		if (pos > -1)
+		if (client != ERASE_MAP_NOMINATIONS)
 		{
-			nominationsData[NominationsData_Nominators].Erase(pos);
+			int pos = nominationsData[NominationsData_Nominators].FindValue(client);
+			
+			// This should always exist unless something went wrong
+			if (pos > -1)
+			{
+				nominationsData[NominationsData_Nominators].Erase(pos);
+
+				if (nominationsData[NominationsData_Nominators].Length == 0)
+				{
+					// Whoops, no more nominations for this map, so lets remove it
+					delete nominationsData[NominationsData_Nominators]; // close handle for nominated map
+					g_Array_NominatedMaps.Erase(location);
+					removed = true;
+				}
+				
+				Forward_NominationRemoved(nominationsData[NominationsData_Map], nominationsData[NominationsData_Group],
+				client, removed);
+				
+			}
+
+			g_MapNominations[client][NominationsData_Map][0] = '\0';
+			g_MapNominations[client][NominationsData_Group][0] = '\0';
 		}
-		
-		if (nominationsData[NominationsData_Nominators].Length == 0)
+		else
 		{
-			// Whoops, no more nominations for this map, so lets remove it
+			// Erase all nominations
+			int count = nominationsData[NominationsData_Nominators].Length;
+			int loopClient;
+			
+			for (int i = count - 1; i >= 0; i--)
+			{
+				bool last = i == 0 ? true : false;
+				loopClient = nominationsData[NominationsData_Nominators].Get(i);
+				
+				Forward_NominationRemoved(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map],
+					loopClient, last);
+
+				g_MapNominations[loopClient][NominationsData_Map][0] = '\0';
+				g_MapNominations[loopClient][NominationsData_Group][0] = '\0';
+			}
+			
+			// Since we removed all client nominations...
 			delete nominationsData[NominationsData_Nominators]; // close handle for nominated map
 			g_Array_NominatedMaps.Erase(location);
-			removed = true;
 		}
-		
-		Forward_NominationRemoved(nominationsData[NominationsData_Map], nominationsData[NominationsData_Group],
-			client, removed);
 		
 		return true;
 	}
 	
 	return false;
+}
+
+stock bool RemoveAllMapNominations(const char[] group, const char[] map)
+{
+	RemoveMapFromNominations(group, map, ERASE_MAP_NOMINATIONS);
 }
 
 stock bool RemoveClientMapNomination(int client)
@@ -391,6 +453,7 @@ public Action Timer_WarningTimer(Handle timer, DataPack data)
 	
 	data.Reset();
 
+	int totalTime = data.ReadCell();
 	MapChoices_MapChange when = data.ReadCell();
 	ArrayList itemList = data.ReadCell();
 	MapChoices_VoteType voteType = data.ReadCell();
@@ -405,17 +468,13 @@ public Action Timer_WarningTimer(Handle timer, DataPack data)
 	
 	timePassed++;
 	
-	int totalTime = data.ReadCell();
-	
 	if (totalTime == timePassed)
 	{
 		// Reset timePassed to 0
 		timePassed = 0;
 		
-		// TODO Finish this
-		
 		StartVote(when, itemList, voteType);
-		return Plugin_Handled;
+		return Plugin_Stop;
 	}
 	
 	Forward_WarningTimerTicked(totalTime - timePassed);
@@ -434,13 +493,15 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 	if (Core_IsVoteInProgress())
 	{
 		DataPack data;
-		CreateDataTimer(g_Cvar_RetryTime.FloatValue, Timer_Retry, data);
+		CreateDataTimer(1.0, Timer_WarningTimer, data, TIMER_REPEAT);
+		data.WriteCell(g_Cvar_RetryTime.IntValue);
 		data.WriteCell(when);
 		data.WriteCell(itemList);
 		data.WriteCell(voteType);
-		data.Reset();
 	}
-
+	
+	g_VoteType = voteType;
+	
 	int limit = GetVoteLimit();
 	if (itemList == null || itemList.Length == 0)
 	{
@@ -448,9 +509,107 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 		
 		// will involve a call to LoadMapList
 		InternalLoadMapList();
-		// TODO: Populate the map/group list from nominations
 		
-		// TODO Fill up the remaining map/groups from our internal list
+		if (itemList == null)
+			itemList = new ArrayList(mapdata_t);
+		
+		// Add Extend or Don't Change to the list
+		if (itemList.Length < limit)
+		{
+			if (when == MapChoicesMapChange_MapEnd && g_Extends < g_Cvar_ExtendCount.IntValue)
+			{
+				int mapData[mapdata_t];
+				strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), MAPCHOICES_EXTEND);
+				strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
+				itemList.PushArray(mapData, sizeof(mapData));
+			}
+			else if (when != MapChoicesMapChange_MapEnd && g_Cvar_DontChange.BoolValue)
+			{
+				int mapData[mapdata_t];
+				strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), MAPCHOICES_NOCHANGE);
+				strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
+				itemList.PushArray(mapData, sizeof(mapData));
+			}
+		}
+		
+		// TODO: Populate the map/group list from nominations
+		while (itemList.Length < limit && g_Array_NominatedMaps.Length > 0)
+		{
+			//TODO Figure out what to do for a group vote.
+			int nominationsData[nominations_t];
+			int mapData[mapdata_t];
+			
+			int random = GetRandomInt(0, g_Array_NominatedMaps.Length - 1);
+			g_Array_NominatedMaps.GetArray(random, nominationsData, sizeof(nominationsData));
+			
+			CopyNominationsDataToMapData(nominationsData, mapData);
+			// We must filter out maps here even if they were OK during the nomination phase
+			if (!CheckMapFilter(mapData))
+			{
+				itemList.PushArray(mapData, sizeof(mapData));
+			}
+			
+			// Remove the map from the nominations list regardless of how many people nominated it.
+			RemoveAllMapNominations(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map]);
+		}
+		
+		int neededMaps = limit - itemList.Length;
+		
+		if (neededMaps > 0)
+		{
+			ArrayList potentials;
+			switch (g_VoteType)
+			{
+				case MapChoices_MapVote:
+				{
+					if (g_MasterVoteType == MapChoices_TieredVote)
+					{
+						// Tiered votes are only maps in the current group
+						potentials = MapChoices_GetMapsInGroup(g_MapList, g_NextMapGroup);
+					}
+					else
+					{
+						// Shallow clone, deep clone isn't strictly needed (checkmapfilter will deep clone what it needs)
+						potentials = g_MapList.Clone();
+					}
+					
+					while (itemList.Length < limit && potentials.Length > 0)
+					{
+						int random = GetRandomInt(0, potentials.Length - 1);
+						int mapData[mapdata_t];
+						potentials.GetArray(random, mapData, sizeof(mapData));
+						
+						if (!CheckMapFilter(mapData))
+						{
+							itemList.PushArray(mapData);
+						}
+						
+						potentials.Erase(random);
+					}
+					
+				}
+				
+				case MapChoices_GroupVote:
+				{
+					potentials = MapChoices_GetGroupList(g_MapList);
+					
+					while (itemList.Length < limit && potentials.Length > 0)
+					{
+						int random = GetRandomInt(0, potentials.Length - 1);
+						int groupData[groupdata_t];
+						potentials.GetArray(random, groupData, sizeof(groupData));
+						
+						if (!CheckGroupFilter(groupData))
+						{
+							itemList.PushArray(groupData);
+						}
+						
+						potentials.Erase(random);
+					}
+				}
+			}
+			delete potentials;
+		}
 	}
 	
 	// TODO the rest of the logic to start the vote
@@ -458,15 +617,147 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 	g_When = when;
 	g_bMapVoteInProgress = true;
 	
+	Forward_MapVoteStarted();
+	
 	Action result = Forward_VoteStart(g_Cvar_VoteTime.IntValue, voteType, itemList, g_Cvar_NoVoteButton.BoolValue);
 	
 	if (result == Plugin_Continue)
 	{
 		// TODO Fire off our internal vote
+
+		// Make a deep copy of the itemList
+		if (g_ItemData != null)
+			delete g_ItemData;
+		
+		g_ItemData = new StringMap();
+		
+		for (int i = 0; i < itemList.Length; i++)
+		{
+			int mapData[mapdata_t];
+			int mapDataCopy[mapdata_t];
+			itemList.GetArray(i, mapData, sizeof(mapData));
+			MapChoices_CopyMapData(mapData, mapDataCopy);
+			
+			switch (voteType)
+			{
+				case MapChoices_MapVote:
+				{
+					char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+					MapChoices_GetItemString(mapDataCopy, itemString, sizeof(itemString));
+					
+					g_ItemData.SetArray(itemString, mapDataCopy, sizeof(mapDataCopy));
+				}
+				
+				case MapChoices_GroupVote:
+				{
+					g_ItemData.SetArray(mapDataCopy[MapData_Group], mapDataCopy, sizeof(mapDataCopy));
+				}
+			}
+		}
+		
+		Menu vote;
+		
+		if (voteType == MapChoices_MapVote)
+		{
+			vote = new Menu(Handler_MapVote, MENU_ACTIONS_DEFAULT|MenuAction_VoteCancel|MenuAction_Display|MenuAction_DisplayItem);
+			vote.SetTitle("MapChoices Map Vote Title");
+		}
+		else
+		{
+			vote = new Menu(Handler_MapVote, MENU_ACTIONS_DEFAULT|MenuAction_VoteCancel|MenuAction_Display);
+			vote.SetTitle("MapChoices Group Vote Title");
+		}
+		
+		vote.NoVoteButton = g_Cvar_NoVoteButton.BoolValue;
+		vote.VoteResultCallback = Handler_MapVoteFinish;
+		vote.DisplayVoteToAll(g_Cvar_VoteTime.IntValue);
 	}
 	
 	// Clean up itemList here
 	delete itemList;
+}
+
+public int Handler_MapVote(Menu vote, MenuAction action, int param1, int param2)
+{
+	switch(action)
+	{
+		case MenuAction_End:
+		{
+			delete g_ItemData;
+			delete vote;
+		}
+		
+		case MenuAction_Display:
+		{
+			char title[256];
+			vote.GetTitle(title, sizeof(title));
+			Format(title, sizeof(title), "%T", title, param1);
+			Panel panel = view_as<Panel>(param2);
+			panel.SetTitle(title);
+		}
+		
+		case MenuAction_VoteCancel:
+		{
+			
+			ArrayList items = new ArrayList(mapdata_t);
+			ArrayList votes = new ArrayList();
+			
+			switch(param1)
+			{
+				case VoteCancel_Generic:
+				{
+					// TODO Display error message?
+				}
+				
+				case VoteCancel_NoVotes:
+				{
+					// We don't decide what to do here, SetWinner handles that
+					for (int i = 0; i < vote.ItemCount; i++)
+					{
+						char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+						int mapData[mapdata_t];
+						vote.GetItem(i, item, sizeof(item));
+						
+						g_ItemData.GetArray(item, mapData, sizeof(mapData));
+						items.PushArray(mapData, sizeof(mapData));
+						votes.Push(0);
+					}
+
+				}
+			}
+			
+			Internal_VoteCompleted(g_VoteType, items, votes, 0, true);
+			delete items;
+			delete votes;
+		}
+		
+		// Only runs for Map votes
+		case MenuAction_DisplayItem:
+		{
+			char item[PLATFORM_MAX_PATH];
+			char display[256];
+			vote.GetItem(param2, item, sizeof(item), _, display, sizeof(display));
+			
+			// Regular items are map;group, but these are left intact
+			if (StrEqual(item, MAPCHOICES_EXTEND) || StrEqual(item, MAPCHOICES_NOCHANGE))
+			{
+				Format(display, sizeof(display), "%T", display, param1);
+				return RedrawMenuItem(display);
+			}
+		}
+	}
+	
+	return 0;
+}
+
+public void Handler_MapVoteFinish(Menu vote,
+					int num_votes,
+					int num_clients,
+					const int[][] client_info,
+					int num_items,
+					const int[][] item_info)
+{
+	// TODO Implement this
 }
 
 int GetVoteLimit()
@@ -519,7 +810,11 @@ bool CheckMapFilter(const int mapData[mapdata_t])
 		return false;
 	}
 	
-	Action result = Forward_CheckMapFilter(mapData);
+	// Deep copy so that subplugins can't overwrite data
+	int mapDataCopy[mapdata_t];
+	MapChoices_CopyMapData(mapData, mapDataCopy);
+	
+	Action result = Forward_CheckMapFilter(mapDataCopy);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -530,12 +825,16 @@ bool CheckMapFilter(const int mapData[mapdata_t])
 
 bool CheckGroupFilter(const int groupData[groupdata_t])
 {
-	if (strlen(groupData[GroupData_Group]) <= 0)
+	if (groupData[GroupData_Group][0] == '\0')
 	{
 		return false;
 	}
+
+	// Deep copy so that subplugins can't overwrite master data
+	int groupDataCopy[groupdata_t];
+	MapChoices_CopyGroupData(groupData, groupDataCopy);
 	
-	Action result = Forward_CheckGroupFilter(groupData);
+	Action result = Forward_CheckGroupFilter(groupDataCopy);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -565,6 +864,29 @@ void ExtendMap()
 	if (GetMapTimeLimit(time) && time > 0)
 	{
 		ExtendMapTimeLimit(g_Cvar_ExtendTime.IntValue * 60);
+	}
+}
+
+// Internal implementation of VoteCompleted.
+// Called both from MapChoices_VoteCompleted native and from internal vote handlers
+void Internal_VoteCompleted(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, int totalVotes, bool canceled)
+{
+	if (canceled)
+	{
+		if (items.Length > 0)
+		{
+			if (g_Cvar_NoVote.BoolValue)
+			{
+				SelectWinner(voteType, items, votes, totalVotes);
+			}
+			else
+			{
+				// TODO: Choose if we want to do anything with result
+				Forward_VoteLost(MapChoices_FailedNoVotes);
+			}
+		}
+		
+		return;
 	}
 }
 
@@ -622,23 +944,29 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 		{
 			PrintToChatAll("%t", "MapChoices Group Voting Finished", mapData[MapData_Group], votePercent, totalVotes);
 			
-			if (g_VoteType == MapChoices_TieredVote)
+			if (g_MasterVoteType == MapChoices_TieredVote)
 			{
 				// TODO Set up map vote
 			}
 			else
 			{
 				// TODO Select random non-recently played map
+				char map[PLATFORM_MAX_PATH];
+				g_bMapVoteCompleted = true;
+				Forward_MapVoteEnded(mapData[MapData_Group], map);
 			}
 		}
 		else if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND))
 		{
 			PrintToChatAll("%t", "MapChoices Current Map Extended", votePercent, totalVotes);
 			ExtendMap();
+			Forward_MapVoteEnded(mapData[MapData_Group], mapData[MapData_Map]);
+			g_Extends++;
 		}
 		else if (StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
 		{
 			PrintToChatAll("%t", "MapChoices Current Map Stays", votePercent, totalVotes);
+			Forward_MapVoteEnded(mapData[MapData_Group], mapData[MapData_Map]);
 		}
 		else
 		{
@@ -656,20 +984,16 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 					mapData[MapData_Group], votePercent, totalVotes);
 			}
 			
+			g_bMapVoteCompleted = true;
+			Forward_MapVoteEnded(mapData[MapData_Group], mapData[MapData_Map]);
 			SetNextMap(mapData[MapData_Map]);
 		}
-		
-		
-		char displayName[PLATFORM_MAX_PATH];
-		GetMapDisplayName(mapData[MapData_Map], displayName, sizeof(displayName));
-		
-		PrintToChatAll("%t", "MapChoices_MapVoteWin", mapData[MapData_Group], displayName);
 	}
 }
 
-MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owner)
+MapChoices_NominateResult InternalNominateMap(const int mapData[mapdata_t], int owner)
 {
-	if (!IsMapValid(map))
+	if (!IsMapValid(mapData[MapData_Map]))
 	{
 		return MapChoicesNominateResult_InvalidMap;
 	}
@@ -679,7 +1003,7 @@ MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owne
 	bool newMap = false;
 	int nominationsData[nominations_t];
 
-	int pos = FindMapInNominations(group, map);
+	int pos = FindMapInNominations(mapData[MapData_Group], mapData[MapData_Map]);
 	if (pos > -1)
 	{
 		g_Array_NominatedMaps.GetArray(pos, nominationsData, sizeof(nominationsData));
@@ -690,8 +1014,7 @@ MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owne
 	else
 	{
 		// Create the data for this nomination
-		strcopy(nominationsData[NominationsData_Map], sizeof(nominationsData[NominationsData_Map]), map);
-		strcopy(nominationsData[NominationsData_Group], sizeof(nominationsData[NominationsData_Group]), group);
+		CopyMapDataToNominationsData(mapData, nominationsData);
 		nominationsData[NominationsData_Nominators] = new ArrayList();
 		nominationsData[NominationsData_Nominators].Push(owner);
 		
@@ -699,9 +1022,28 @@ MapChoices_NominateResult InternalNominateMap(char[] group, char[] map, int owne
 		newMap = true;
 	}
 	
-	Forward_NominationAdded(group, map, owner, newMap);
+	Forward_NominationAdded(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map],
+		owner, newMap);
 	
 	return newMap ? MapChoicesNominateResult_Added : MapChoicesNominateResult_AlreadyInVote;
+}
+
+void CopyMapDataToNominationsData(const int mapData[mapdata_t], int nominationsData[nominations_t])
+{
+	strcopy(nominationsData[NominationsData_Map], sizeof(nominationsData[NominationsData_Map]), mapData[MapData_Map]);
+	strcopy(nominationsData[NominationsData_Group], sizeof(nominationsData[NominationsData_Group]), mapData[MapData_Group]);
+	
+	CopyStringMap(mapData[NominationsData_MapAttributes], nominationsData[MapData_MapAttributes]);
+	CopyStringMap(mapData[NominationsData_GroupAttributes], nominationsData[MapData_GroupAttributes]);
+}
+
+void CopyNominationsDataToMapData(const int nominationsData[nominations_t], int mapData[mapdata_t])
+{
+	strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), nominationsData[NominationsData_Map]);
+	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), nominationsData[NominationsData_Group]);
+	
+	CopyStringMap(nominationsData[MapData_MapAttributes], mapData[NominationsData_MapAttributes]);
+	CopyStringMap(nominationsData[MapData_GroupAttributes], mapData[NominationsData_GroupAttributes]);
 }
 
 // Events
@@ -947,24 +1289,10 @@ Action Forward_ChangeMap(const char[] map, bool isRoundEnd)
 // native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const char[] map, int owner);
 public int Native_Nominate(Handle plugin, int numParams)
 {
-	int mapLength;
-	int groupLength;
-
-	GetNativeStringLength(1, groupLength);
-	GetNativeStringLength(2, mapLength);
+	int mapData[mapdata_t];
+	GetNativeArray(1, mapData, sizeof(mapData));
 	
-	if (mapLength <= 0 || groupLength <= 0)
-	{
-		return false;
-	}
-	
-	char[] group = new char[groupLength+1];
-	GetNativeString(1, group, groupLength+1);
-	
-	char[] map = new char[mapLength+1];
-	GetNativeString(2, map, mapLength+1);
-	
-	return view_as<int>(InternalNominateMap(group, map, GetNativeCell(3)));
+	return view_as<int>(InternalNominateMap(mapData, GetNativeCell(2)));
 }
 
 // native ArrayList MapChoices_GetNominatedMapList();
@@ -1028,7 +1356,7 @@ public int Native_GetCurrentMapGroup(Handle plugin, int numParams)
 // native MapChoices_VoteType MapChoices_GetVoteType();
 public int Native_GetVoteType(Handle plugin, int numParams)
 {
-	return view_as<int>(g_VoteType);
+	return view_as<int>(g_MasterVoteType);
 }
 
 // native bool MapChoices_GetMapData(const char[] group, const char[] map, int mapData[mapdata_t]);
@@ -1079,25 +1407,9 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 	int totalVotes = GetNativeCell(4);
 	bool canceled = GetNativeCell(5);
 	
-	if (canceled)
-	{
-		if (items.Length > 0)
-		{
-			if (g_Cvar_NoVote.BoolValue)
-			{
-				SelectWinner(voteType, items, votes, totalVotes);
-			}
-			else
-			{
-				// TODO: Choose if we want to do anything with result
-				Forward_VoteLost(MapChoices_FailedNoVotes);
-			}
-		}
-		
-		return;
-	}
+	Internal_VoteCompleted(voteType, items, votes, totalVotes, canceled);
 	
-	// TODO Finish this, remove next two natives.
+	// TODO Finish this
 }
 
 // native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);

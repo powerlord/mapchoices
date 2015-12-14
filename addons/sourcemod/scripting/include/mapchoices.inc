@@ -320,6 +320,19 @@ stock void MapChoices_CopyGroupData(const int groupData[groupdata_t], int groupD
 }
 
 /**
+ * Create a deep copy of a mapdata_t instance, but output into a group_t
+ * 
+ * @param groupData		The groupdata_t to copy
+ * @param mapData			The mapdata_t to copy data into.
+ */
+stock void MapChoices_CopyMapDataToGroupData(const int mapData[mapdata_t], int groupData[groupdata_t])
+{
+	strcopy(groupData[GroupData_Group], sizeof(groupData[GroupData_Group]), mapData[MapData_Group]);
+	
+	CopyStringMap(mapData[MapData_GroupAttributes], groupData[GroupData_GroupAttributes]);
+}
+
+/**
  * Create a deep copy of a groupdata_t instance, but output into a mapdata_t
  * 
  * @param groupData		The groupdata_t to copy
@@ -333,12 +346,69 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
 }
 
 /**
+ * Given a mapdata_t ArrayList, get back a char[] ArrayList of group names
+ * You may want to cache this as it only will change when the serial changes
+ * 
+ * @param itemList		The list of mapdata_t items
+ * 
+ * @return ArrayList		Arraylist of groupdata_t for each unique group string
+ */
+stock ArrayList MapChoices_GetGroupList(ArrayList itemList)
+{
+	ArrayList groupList = new ArrayList(groupdata_t);
+	
+	for (int i = 0; i < itemList.Length; i++)
+	{
+		int mapData[mapdata_t];
+		itemList.GetArray(i, mapData, sizeof(mapData));
+		
+		if (groupList.FindString(mapData[MapData_Group]) == -1)
+		{
+			int groupData[groupdata_t];
+			MapChoices_CopyMapDataToGroupData(mapData, groupData);
+			groupList.PushArray(groupData, sizeof(groupData));
+		}
+	}
+	
+	return groupList;
+}
+
+/**
+ * Given an itemList and group name, return an ArrayList of all mapdata_t items with the matching group
+ * 
+ * @param itemList		The list of mapdata_t items
+ * @param groupName		The group name to look for
+ * 
+ * @return ArrayList		An ArrayList of mapdata_t of the matching items.
+ */
+stock ArrayList MapChoices_GetMapsInGroup(ArrayList itemList, const char[] groupName)
+{
+	ArrayList newItems = new ArrayList(mapdata_t);
+	
+	for (int i = 0; i < itemList.Length; i++)
+	{
+		int mapData[mapdata_t];
+		itemList.GetArray(i, mapData, sizeof(mapData));
+		
+		if (StrEqual(groupName, mapData[MapData_Group]))
+		{
+			// Make a copy
+			int mapDataCopy[mapdata_t];
+			MapChoices_CopyMapData(mapData, mapDataCopy);
+			newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
+		}
+	}
+	
+	return newItems;
+}
+
+/**
  * An internal funtion to copy a StringMap that contains MapChoices attributes
  * 
  * @param original	The StringMap to copy
  * @param copy		The StringMap to copy into.  If it is null, it will be created
  */
-static stock void CopyStringMap(StringMap original, StringMap copy)
+stock void CopyStringMap(StringMap original, StringMap copy)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
@@ -489,7 +559,7 @@ stock void MapChoices_SplitItemString(const char[] itemString, char[] group, int
  * @param group	The group of the map, defaults to MAPCHOICES_DEFAULTGROUP
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const char[] map, int owner);
+native MapChoices_NominateResult MapChoices_Nominate(const int mapData[mapdata_t], int owner);
 
 /**
  * Attempt to remove a map from the MapChoices map list.
