@@ -56,8 +56,7 @@ static int m_MapData[mapdata_t];
 static int m_GroupData[groupdata_t];
 static AdvMapListState m_CurAdvState = ADV_MPS_NONE;
 static int m_AdvIgnoreLevel;
-static ArrayList tempMapList;
-static ArrayList tempGroupList;
+static StringMap tempMapTrie;
 
 bool ReadAdvancedMapFile(int[] pMapList)
 {
@@ -66,8 +65,7 @@ bool ReadAdvancedMapFile(int[] pMapList)
 		return false;
 	}
 	
-	delete pMapList[maplist_pArray];
-	delete pMapList[maplist_pGroupArray];
+	MapChoices_CloseMapList(pMapList[maplist_pTrie]);
 	
 	SMCParser parser = GetAdvancedCfgSMCParser();
 	
@@ -87,8 +85,7 @@ bool ReadAdvancedMapFile(int[] pMapList)
 		return false;
 	}
 	
-	pMapList[maplist_pArray] = tempMapList;
-	pMapList[maplist_pGroupArray] = tempGroupList;
+	pMapList[maplist_pTrie] = tempMapTrie;
 	return true;
 }
 
@@ -97,8 +94,8 @@ public void ParseAdvancedList_ParseStart(SMCParser smc)
 {
 	m_CurAdvState = ADV_MPS_NONE;
 	m_AdvIgnoreLevel = 0;
-	ResetMapData(m_MapData);
-	tempMapList = new ArrayList(mapdata_t);
+	MapChoices_CloseGroup(m_GroupData);
+	tempMapTrie = new StringMap();
 }
   
 public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, bool opt_quotes)
@@ -122,18 +119,20 @@ public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, 
 	}
 	else if (m_CurAdvState == ADV_MPS_GLOBAL)
 	{
-		ResetGroupData(m_GroupData);
+		MapChoices_CloseGroup(m_GroupData);
 		
 		strcopy(m_GroupData[GroupData_Group], sizeof(m_GroupData[GroupData_Group]), name);
+		m_GroupData[GroupData_GroupAttributes] = new StringMap();
+		m_GroupData[GroupData_MapList] = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		ResetMapData(m_MapData);
+		MapChoices_CloseMap(m_MapData);
 		
-		strcopy(m_MapData[MapData_Group], sizeof(m_MapData[MapData_Group]), m_GroupData[GroupData_Group]);		
 		strcopy(m_MapData[MapData_Map], sizeof(m_MapData[MapData_Map]), name);
+		m_MapData[MapData_MapAttributes] = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_MAP;
 	}
@@ -154,20 +153,10 @@ public SMCResult ParseAdvancedList_KeyValue(SMCParser smc, const char[] key, con
 	
 	if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		if (m_GroupData[GroupData_GroupAttributes] == null)
-		{
-			m_GroupData[GroupData_GroupAttributes] = new StringMap();
-		}
-		
 		m_GroupData[GroupData_GroupAttributes].SetString(key, value);
 	}
 	else if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		if (m_MapData[MapData_MapAttributes] == null)
-		{
-			m_MapData[MapData_MapAttributes] = new StringMap();
-		}
-		
 		m_MapData[MapData_MapAttributes].SetString(key, value);
 	}
 	
@@ -188,9 +177,9 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 		int realMapData[mapdata_t];
 		CopyMapData(m_MapData, realMapData);
 		
-		ResetMapData(m_MapData);
+		MapChoices_CloseMap(m_MapData);
 		
-		tempMapList.PushArray(realMapData, sizeof(realMapData));
+		m_GroupData[GroupData_MapList].SetArray(realMapData[MapData_Map], realMapData, sizeof(realMapData));
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
@@ -199,9 +188,9 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 		int realGroupData[groupdata_t];
 		CopyGroupData(m_GroupData, realGroupData);
 		
-		ResetGroupData(m_GroupData);
+		MapChoices_CloseGroup(m_GroupData);
 		
-		tempGroupList.PushArray(realGroupData, sizeof(realGroupData));
+		tempMapTrie.SetArray(realGroupData[GroupData_Group], realGroupData, sizeof(realGroupData));
 		
 		m_CurAdvState = ADV_MPS_GLOBAL;
 	}
@@ -215,29 +204,12 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 
 public void ParseAdvancedList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
-	ResetMapData(m_MapData);
-}
-
-// Since we don't new/delete enum arrays, just reset it.
-stock void ResetMapData(int mapData[mapdata_t])
-{
-	mapData[MapData_Map][0] = '\0';
-	mapData[MapData_Group][0] = '\0';
-	delete mapData[MapData_MapAttributes];
-	mapData[MapData_MapAttributes] = null;
-}
-
-stock void ResetGroupData(int groupData[groupdata_t])
-{
-	groupData[GroupData_Group][0] = '\0';
-	delete groupData[GroupData_GroupAttributes];
-	groupData[GroupData_GroupAttributes] = null;
+	MapChoices_CloseGroup(m_GroupData);
 }
 
 stock void CopyMapData(int source[mapdata_t], int target[mapdata_t])
 {
 	strcopy(target[MapData_Map], sizeof(target[MapData_Map]), source[MapData_Map]);
-	strcopy(target[MapData_Group], sizeof(target[MapData_Group]), source[MapData_Group]);
 	target[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(source[MapData_MapAttributes]));
 }
 
@@ -245,6 +217,7 @@ stock void CopyGroupData(int source[groupdata_t], int target[groupdata_t])
 {
 	strcopy(target[GroupData_Group], sizeof(target[GroupData_Group]), source[GroupData_Group]);
 	target[GroupData_GroupAttributes] = view_as<StringMap>(CloneHandle(source[GroupData_GroupAttributes]));
+	target[GroupData_MapList] = view_as<StringMap>(CloneHandle(source[GroupData_MapList]));
 }
 
 SMCParser GetAdvancedCfgSMCParser()

@@ -420,6 +420,7 @@ stock bool RemoveClientMapNomination(int client)
 void InternalLoadMapList()
 {
 	// We're calling the external function here.  This way, if we move it to a subplugin, we can just copy/paste.
+	// TODO Fix all g_MapList references.  At the moment, g_MapList is referring to an old data structure
 	if (MapChoices_ReadMapList(g_MapList, g_Serial, "mapchoices", MAPLIST_FLAG_CLEARARRAY|MAPLIST_FLAG_MAPSFOLDER) == null && g_Serial == -1)
 	{
 		SetFailState("Could not load map list");

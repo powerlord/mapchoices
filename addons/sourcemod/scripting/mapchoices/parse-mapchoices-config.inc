@@ -65,8 +65,7 @@ enum maplist_info_t
 	bool:maplist_bIsCompat,
 	bool:maplist_bIsPath,
 	maplist_last_modified_time,
-	ArrayList:maplist_pArray,				/**< ArrayList of mapdata_t */
-	ArrayList:maplist_pGroupArray,			/**< ArrayList of groupdata_t */
+	StringMap:maplist_pTrie,				/**< StringMap of groupdata_t, which is being redesigned */
 	maplist_serial,
 	String:maplist_name[PLATFORM_MAX_PATH],
 	String:maplist_path[PLATFORM_MAX_PATH],
@@ -140,7 +139,7 @@ void AddOrUpdateDefault(const char[] name, const char[] file, MapChoices_MapList
 		pMapList[maplist_bIsPath] = true;
 		pMapList[maplist_last_modified_time] = true;
 		strcopy(pMapList[maplist_name], sizeof(pMapList[maplist_name]), name);
-		pMapList[maplist_pArray] = null;
+		pMapList[maplist_pTrie] = null;
 		strcopy(pMapList[maplist_path], sizeof(pMapList[maplist_path]), file);
 		pMapList[maplist_serial] = 0;
 		pMapList[maplist_Type] = mapListType;
@@ -209,7 +208,7 @@ public void UpdateCache()
 	GetMapCycleFilePath(pDefList[maplist_path], sizeof(pDefList[maplist_path]));
 	
 	pDefList[maplist_last_modified_time] = 0;
-	pDefList[maplist_pArray] = null;
+	pDefList[maplist_pTrie] = null;
 	pDefList[maplist_serial] = 0;
 	
 	m_ListLookup.SetArray("mapcyclefile", pDefList, sizeof(pDefList));
@@ -246,7 +245,7 @@ public void UpdateCache()
 		if (IsKeyInStringMap(m_ListLookup, localArray[maplist_name]))
 		{
 			/* The compatibility shim is no longer needed. */
-			delete localArray[maplist_pArray];
+			MapChoices_CloseMapList(localArray[maplist_pTrie]);
 		}
 		else
 		{
@@ -381,15 +380,15 @@ public void ParseMapList_ParseEnd(SMCParser smc, bool halted, bool failed)
 	ResetMapList(m_pCurMapList);
 }
 
-ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, int flags, Handle plugin=INVALID_HANDLE)
+StringMap UpdateMapList(StringMap pUseTrie, const char[] name, int &pSerial, int flags, Handle plugin=INVALID_HANDLE)
 {
 	int change_serial;
-	ArrayList pNewArray;
+	StringMap pNewTrie;
 	bool success;
 	
 	bool free_new_array = false;
 	
-	if ((success = GetMapList(pNewArray, name, change_serial)) == false)
+	if ((success = GetMapList(pNewTrie, name, change_serial)) == false)
 	{
 		if ((flags & MAPLIST_FLAG_NO_DEFAULT) != MAPLIST_FLAG_NO_DEFAULT)
 		{
@@ -397,12 +396,12 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 			 */
 			if (strcmp(name, "default") != 0)
 			{
-				success = GetMapList(pNewArray, name, change_serial);
+				success = GetMapList(pNewTrie, name, change_serial);
 			}
 			/* If either of the last two conditions failed, try again if we can */
 			if (!success && strcmp(name, "mapcyclefile") != 0)
 			{
-				success = GetMapList(pNewArray, "mapcyclefile", change_serial);
+				success = GetMapList(pNewTrie, "mapcyclefile", change_serial);
 			}
 		}
 	}
@@ -417,10 +416,15 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 	 * If there was a success but no map list, we need to look in the maps folder
 	 * If there was a failure and the flag is specified, we need to look in the maps folder
 	 */
-	if ((success && pNewArray == null)
+	if ((success && pNewTrie == null)
 		|| (!success && ((flags & MAPLIST_FLAG_MAPSFOLDER) == MAPLIST_FLAG_MAPSFOLDER)))
 	{
-		pNewArray = new ArrayList(mapdata_t);
+		pNewTrie = new StringMap();
+		int groupData[groupdata_t];
+		strcopy(groupData[GroupData_Group], sizeof(groupData[GroupData_Group]), MAPCHOICES_DEFAULTGROUP);
+		groupData[GroupData_GroupAttributes] = new StringMap();
+		
+		ArrayList pNewArray = new ArrayList(mapdata_t);
 		free_new_array = true;
 		
 		// Moved to a separate function so that we can call it recursively
@@ -437,15 +441,15 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 			SortADTArray(pNewArray, Sort_Ascending, Sort_String);
 		}
 		
-		ArrayList oldArray = pNewArray;
-		pNewArray = view_as<ArrayList>(CloneHandle(oldArray, plugin));
-		delete oldArray;
+		groupData[GroupData_MapList] = CopyMapsFromArrayList(pNewArray, plugin);
+		
+		delete pNewArray;
 		
 		change_serial = -1;
 	}
 	
 	/* If there is still no array by this point, bail out. */
-	if (pNewArray == null)
+	if (pNewTrie == null)
 	{
 		pSerial = -1;
 		return null;
@@ -456,93 +460,37 @@ ArrayList UpdateMapList(ArrayList pUseArray, const char[] name, int &pSerial, in
 	// OK, we need to make sure all the MapData_MapAttributes entries in pNewArray belong to the calling plugin
 	
 	/* If there is no input array, return something temporary. */
-	if (pUseArray == null)
+	if (pUseTrie == null)
 	{
 		if (free_new_array)
 		{
 			// This was already converted to plugin in the above block
-			return pNewArray;
+			return pNewTrie;
 		}
 		else
 		{
-			ArrayList tempArray = new ArrayList(mapdata_t);
-			ArrayList cloneArray = view_as<ArrayList>(CloneHandle(tempArray, plugin));
-			delete tempArray;
 			
-			CopyMapDataArray(pNewArray, cloneArray, plugin);
-			return cloneArray;
+			return CloneMapList(pNewTrie, plugin);
 		}
 	}
 	
 	/* Clear the input array if necessary. */
 	if ((flags & MAPLIST_FLAG_CLEARARRAY) == MAPLIST_FLAG_CLEARARRAY)
 	{
-		pUseArray.Clear();
+		pUseTrie.Clear();
 	}
 	
 	/* Copy. */
-	CopyMapDataArray(pNewArray, pUseArray, plugin);
-	
-	for (int i = 0; i < pNewArray.Length; i++)
-	{
-		int pMapData[mapdata_t];
-		pNewArray.GetArray(i, pMapData, sizeof(pMapData));
-		
-		int pNewMapData[mapdata_t];
-		
-		strcopy(pNewMapData[MapData_Map], sizeof(pNewMapData[MapData_Map]), pMapData[MapData_Map]);
-		strcopy(pNewMapData[MapData_Group], sizeof(pNewMapData[MapData_Group]), pMapData[MapData_Group]);
-		/* If attributes exist, we need to CloneHandle them to the other plugin */
-		if (pMapData[MapData_MapAttributes] != null)
-		{
-			pNewMapData[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(pNewMapData[MapData_MapAttributes], plugin));
-		}
-		
-		pUseArray.PushArray(pNewMapData, sizeof(pNewMapData));
-	}
+	pUseTrie = CloneMapList(pNewTrie, plugin);
 	
 	/* Free resources if necessary. */
 	if (free_new_array)
 	{
-		delete pNewArray;
+		delete pNewTrie;
 	}
 	
 	/* Return the array we were given. */
-	return pUseArray;
-}
-
-void CopyMapDataArray(ArrayList mapData, ArrayList &newData, Handle plugin)
-{
-	if (mapData == null)
-	{
-		return;
-	}
-	
-	if (newData == null)
-	{
-		ArrayList tempData = new ArrayList(mapdata_t);
-		newData = view_as<ArrayList>(CloneHandle(tempData, plugin));
-		delete tempData;
-	}
-	
-	for (int i = 0; i < mapData.Length; i++)
-	{
-		int pMapData[mapdata_t];
-		mapData.GetArray(i, pMapData, sizeof(pMapData));
-		
-		int pNewMapData[mapdata_t];
-		
-		strcopy(pNewMapData[MapData_Map], sizeof(pNewMapData[MapData_Map]), pMapData[MapData_Map]);
-		strcopy(pNewMapData[MapData_Group], sizeof(pNewMapData[MapData_Group]), pMapData[MapData_Group]);
-		/* If attributes exist, we need to CloneHandle them to the other plugin */
-		if (pMapData[MapData_MapAttributes] != null)
-		{
-			pNewMapData[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(pNewMapData[MapData_MapAttributes], plugin));
-		}
-		
-		newData.PushArray(pNewMapData, sizeof(pNewMapData));
-	}
-	
+	return pUseTrie;
 }
 
 void FindMapsInDirectory(const char[] directory, ArrayList files)
@@ -616,7 +564,7 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 	delete findHandle;
 }
 
-static bool GetMapList(ArrayList &ppArray, const char[] name, int &pSerial)
+static bool GetMapList(StringMap &ppTrie, const char[] name, int &pSerial)
 {
 	int last_time;
 	int pMapList[maplist_info_t];
@@ -625,12 +573,12 @@ static bool GetMapList(ArrayList &ppArray, const char[] name, int &pSerial)
 		return false;
 	
 	if (!pMapList[maplist_bIsPath])
-		return GetMapList(ppArray, pMapList[maplist_path], pSerial);
+		return GetMapList(ppTrie, pMapList[maplist_path], pSerial);
 		
 	/* If it is a path, and the path is "*", assume all files must be used. */
 	if (strcmp(pMapList[maplist_path], "*") == 0)
 	{
-		ppArray = null;
+		ppTrie = null;
 		return true;
 	}
 	
@@ -673,16 +621,52 @@ static bool GetMapList(ArrayList &ppArray, const char[] name, int &pSerial)
 		pMapList[maplist_serial] = ++m_nSerialChange;
 	}
 	
-	if (pMapList[maplist_pArray] == null || pMapList[maplist_pArray].Length == 0)
+	if (pMapList[maplist_pTrie] == null || pMapList[maplist_pTrie].Size == 0)
 	{
 		return false;
 	}
 	
 	pSerial = pMapList[maplist_serial];
-	ppArray = pMapList[maplist_pArray].Clone();
+	ppTrie = CloneMapList(pMapList[maplist_pTrie]);
 	
 	return true;
 }
+
+StringMap CloneMapList(StringMap mapList, Handle plugin = null)
+{
+	if (mapList == null)
+		return null;
+		
+	StringMap copy = new StringMap();
+	if (plugin != null)
+	{
+		StringMap tempCopy = copy;
+		copy = view_as<StringMap>(CloneHandle(tempCopy, plugin));
+		delete tempCopy;
+	}
+	
+	StringMapSnapshot snapshot = mapList.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		int groupData[groupdata_t];
+		int groupDataCopy[groupdata_t];
+		
+		mapList.GetArray(key, groupData, sizeof(groupData));
+		
+		MapChoices_CloneGroup(groupData, groupDataCopy, plugin);
+		copy.SetArray(key, groupDataCopy, sizeof(groupDataCopy));
+	}
+	
+	delete snapshot;
+	
+	return copy;
+}
+
 
 /**
  * Read a classic mapcycle style list.
@@ -699,8 +683,13 @@ static bool ReadClassicMapFile(int[] pMapList)
 		return false;
 	}
 	
-	delete pMapList[maplist_pArray];
-	pMapList[maplist_pArray] = new ArrayList(mapdata_t);
+	MapChoices_CloseMapList(pMapList[maplist_pTrie]);
+	pMapList[maplist_pTrie] = new StringMap();
+	
+	int defaultGroup[groupdata_t];
+	strcopy(defaultGroup[GroupData_Group], sizeof(defaultGroup[GroupData_Group]), MAPCHOICES_DEFAULTGROUP);
+	
+	defaultGroup[GroupData_MapList] = new StringMap();
 	
 	while (!fp.EndOfFile() && fp.ReadLine(buffer, sizeof(buffer)))
 	{
@@ -741,11 +730,12 @@ static bool ReadClassicMapFile(int[] pMapList)
 		
 		int pMapData[mapdata_t];
 		strcopy(pMapData[MapData_Map], sizeof(pMapData[MapData_Map]), buffer);
-		strcopy(pMapData[MapData_Group], sizeof(pMapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
-		pMapData[MapData_MapAttributes] = null;
+		pMapData[MapData_MapAttributes] = new StringMap();
 		
-		pMapList[maplist_pArray].PushArray(pMapData);
+		defaultGroup[GroupData_MapList].SetArray(buffer, pMapData, sizeof(pMapData));
 	}
+	
+	pMapList[maplist_pTrie].SetArray(defaultGroup[GroupData_Group], defaultGroup, sizeof(defaultGroup));
 	
 	fp.Close();
 	return true;
@@ -769,33 +759,23 @@ static void DumpCache(ArrayList compat_list)
 		}
 		else
 		{
-			if (localArray[maplist_pArray] != null)
+			if (localArray[maplist_pTrie] != null)
 			{
-				for (int j = 0; j < localArray[maplist_pArray].Length; j++)
-				{
-					int pMapData[mapdata_t];
-					localArray[maplist_pArray].GetArray(j, pMapData, sizeof(pMapData));
-					if (pMapData[MapData_MapAttributes] != null)
-					{
-						delete pMapData[MapData_MapAttributes];
-					}
-				}
-				
-				delete localArray[maplist_pArray];
+				MapChoices_CloseMapList(localArray[maplist_pTrie]);
 			}
 		}
 		m_MapLists.Erase(i);
 	}
 }
 
-// native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY);
+// native StringMap MapChoices_ReadMapList(StringMap array=null, &serial=1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY);
 public int Native_ReadMapList(Handle plugin, int numParams)
 {
-	ArrayList pArray;
+	StringMap pTrie;
 	int addr, flags; // addr is a ptr in C++
-	ArrayList pNewArray;
+	StringMap pNewTrie;
 	
-	pArray = view_as<ArrayList>(GetNativeCell(1));
+	pTrie = view_as<StringMap>(GetNativeCell(1));
 	addr = GetNativeCellRef(2);
 	int length;
 	GetNativeStringLength(3, length);
@@ -803,17 +783,17 @@ public int Native_ReadMapList(Handle plugin, int numParams)
 	GetNativeString(3, str, length+1);
 	flags = GetNativeCell(4);
 	
-	pNewArray = LoadMapList(pArray, addr, str, flags, plugin);
+	pNewTrie = LoadMapList(pTrie, addr, str, flags, plugin);
 
 	SetNativeCellRef(2, addr); // Update serial with the copy from UpdateMapList
 	
-	return view_as<int>(pNewArray);	
+	return view_as<int>(pNewTrie);	
 }
 
 // Internal function to call
-ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY, Handle plugin=null)
+StringMap LoadMapList(StringMap pTrie=null, int &serial=-1, const char[] config=MAPCHOICES_DEFAULTGROUP, int flags=MAPLIST_FLAG_CLEARARRAY, Handle plugin=null)
 {
-	ArrayList pNewArray;
+	StringMap pNewTrie;
 	
 	/* Make sure the input Handle is valid */
 	// Not checkable in SourcePawn
@@ -822,21 +802,21 @@ ArrayList LoadMapList(ArrayList pArray=null, int &serial=-1, const char[] config
 	UpdateCache();
 	
 	/* Try to get the map list. */
-	// In C++, hndl is pArray... the array inside the Handle, but SourcePawn doesn't differentiate between them
-	if ((pNewArray = UpdateMapList(pArray, config, serial, flags, plugin)) == null)
+	// In C++, hndl is pTrie... the array inside the Handle, but SourcePawn doesn't differentiate between them
+	if ((pNewTrie = UpdateMapList(pTrie, config, serial, flags, plugin)) == null)
 	{
 		return null;
 	}
 
 	/* If the user wanted a new array, create it now. */
-	if (pArray == INVALID_HANDLE)
+	if (pTrie == INVALID_HANDLE)
 	{
 		// Removed irrelevant null check on handle creation, not applicable to SourcePawn
-		pArray = view_as<ArrayList>(CloneHandle(pNewArray, plugin)); // Changes ownership
-		delete pNewArray; // Delete our copy of this handle
+		pTrie = view_as<StringMap>(CloneHandle(pNewTrie, plugin)); // Changes ownership
+		delete pNewTrie; // Delete our copy of this handle
 	}
 	
-	return pArray;
+	return pTrie;
 }
 
 public int Native_SetMapListCompatBind(Handle plugin, int numParams)
@@ -865,13 +845,7 @@ void ResetMapList(mapList[])
 	mapList[maplist_bIsPath] = false;
 	mapList[maplist_last_modified_time] = 0;
 	// Since we store this for later, don't close it
-	/*
-	if (mapList[maplist_pArray] != null)
-	{
-		delete mapList[maplist_pArray];
-	}
-	*/
-	mapList[maplist_pArray] = null;
+	mapList[maplist_pTrie] = null;
 	mapList[maplist_serial] = -1;
 	mapList[maplist_name] = "";
 	mapList[maplist_path] = "";

@@ -156,7 +156,7 @@ enum mapdata_t
 	String:MapData_Map[PLATFORM_MAX_PATH],
 	String:MapData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
 	StringMap:MapData_MapAttributes,
-	StringMap:MapData_GroupAttributes,
+	StringMap:MapData_GroupAttributes, /**< Deprecated, will be removed once the maplist update hits */
 };
 
 
@@ -168,6 +168,7 @@ enum groupdata_t
 {
 	String:GroupData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
 	StringMap:GroupData_GroupAttributes,
+	StringMap:GroupData_MapList,
 }
 
 /**
@@ -232,7 +233,7 @@ enum groupdata_t
  *						least one item.  The serial number is updated to a positive number.
  * @error			Invalid array Handle that is not INVALID_HANDLE.
  */
-native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=-1, const char[] config="default", int flags=MAPLIST_FLAG_CLEARARRAY);
+native StringMap MapChoices_ReadMapList(StringMap array=null, &serial=-1, const char[] config="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
 /**
  * Makes a compatibility binding for map lists.  For example, if a function previously used 
@@ -249,30 +250,79 @@ native ArrayList MapChoices_ReadMapList(ArrayList array=null, &serial=-1, const 
 native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType mapListType = MapChoicesMapList_Classic);
 
 /**
- * Clean up a map list ArrayList
+ * Close a Map List.  This is mandatory to prevent memory leaks
  * 
- * A map list Handle is an adt_array of mapdata_t entries.
- * mapdata_t contains a Trie of MapAttributes, which is CloneHandled to the calling plugin
+ * Note: mapList is passed by reference, so it will be deleted in the calling plugin as well.
+ * 
+ * @param mapList		A mapList returned from ReadMapList
  */
-stock void MapChoices_CloseMapList(ArrayList &mapList)
+stock void MapChoices_CloseMapList(StringMap &mapList)
 {
 	if (mapList == null)
-	{
 		return;
+	
+	StringMapSnapshot snapshot = mapList.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		int groupData[groupdata_t];
+		mapList.GetArray(key, groupData, sizeof(groupData));
+		
+		MapChoices_CloseGroup(groupData);
 	}
 	
-	for (int i = 0 ; i < mapList.Length; i++)
-	{
-		int mapData[mapdata_t];
-		mapList.GetArray(i, mapData, sizeof(mapData));
-		MapChoices_DeleteMapData(mapData);
-	}
 	delete mapList;
+}
+
+/**
+ * Close all handles for a groupdata_t
+ * 
+ * @param groupData 	The groupdata_t to close
+ */
+stock void MapChoices_CloseGroup(int groupData[groupdata_t])
+{
+	if (groupData[GroupData_MapList] == null)
+		return;
+	
+	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		int mapData[mapdata_t];
+		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+		
+		MapChoices_CloseMap(mapData);
+	}
+	
+	groupData[GroupData_Group][0] = '\0';
+	delete groupData[GroupData_MapList];
+	delete groupData[GroupData_GroupAttributes];
+}
+
+/**
+ * Close all handles for a mapdata_t
+ * 
+ * @param mapData		The mapdata_t to close
+ */
+stock void MapChoices_CloseMap(int mapData[mapdata_t])
+{
+	mapData[MapData_Map][0] = '\0';
+	
+	delete mapData[MapData_MapAttributes];
 }
 
 /**
  * Delete a single map entry
  * 
+ * @deprecated			Will be removed when the mapdata rewrite is finished
  * @param mapData			The mapdata_t whose attributes lists should be deleted
  */
 stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
@@ -284,11 +334,77 @@ stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
 /**
  * Delete a single group entry
  * 
+ * @deprecated			Will be removed when the mapdata rewrite is finished
  * @param groupData		The groupdata_t whose attributes lists should be deleted
  */
 stock void MapChoices_DeleteGroupData(int groupData[groupdata_t])
 {
 	delete groupData[GroupData_GroupAttributes];
+}
+
+stock void MapChoices_CloneGroup(const int groupData[groupdata_t], int groupDataCopy[groupdata_t], Handle plugin = null)
+{
+	StringMap mapList = new StringMap();
+	
+	if (plugin != null)
+	{
+		StringMap tempCopy = mapList;
+		mapList = view_as<StringMap>(CloneHandle(tempCopy, plugin));
+		delete tempCopy;
+	}
+	
+	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
+	groupDataCopy[GroupData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes], plugin);
+	
+	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		int mapData[mapdata_t];
+		int mapDataCopy[mapdata_t];
+		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+		
+		MapChoices_CloneMap(mapData, mapDataCopy, plugin);
+		groupData[GroupData_MapList].SetArray(key, mapDataCopy, sizeof(mapDataCopy));
+	}
+	
+	delete snapshot;
+}
+
+stock StringMap CopyMapsFromArrayList(ArrayList mapArray, Handle plugin = null)
+{
+	if (mapArray == null)
+		return null;
+	
+	StringMap copy = new StringMap();
+	
+	if (plugin != null)
+	{
+		StringMap tempCopy = copy;
+		copy = view_as<StringMap>(CloneHandle(tempCopy, plugin));
+		delete tempCopy;
+	}
+	
+	for (int i = 0; i < mapArray.Length; i++)
+	{
+		int mapData[mapdata_t];
+		mapArray.GetString(i, mapData[MapData_Map], sizeof(mapData[MapData_Map]));
+		mapData[MapData_MapAttributes] = new StringMap();
+	}
+	
+	return copy;
+}
+
+stock void MapChoices_CloneMap(const int mapData[mapdata_t], int mapDataCopy[mapdata_t], Handle plugin = null)
+{
+	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
+	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
+	
+	mapDataCopy[MapData_MapAttributes] = CopyStringMap(mapData[MapData_MapAttributes], plugin);
 }
 
 /**
@@ -302,8 +418,8 @@ stock void MapChoices_CopyMapData(const int mapData[mapdata_t], int mapDataCopy[
 	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
 	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
 	
-	CopyStringMap(mapData[MapData_MapAttributes], mapDataCopy[MapData_MapAttributes]);
-	CopyStringMap(mapData[MapData_GroupAttributes], mapDataCopy[MapData_GroupAttributes]);
+	mapDataCopy[MapData_MapAttributes] = CopyStringMap(mapData[MapData_MapAttributes]);
+	mapDataCopy[MapData_GroupAttributes] = CopyStringMap(mapData[MapData_GroupAttributes]);
 }
 
 /**
@@ -316,7 +432,7 @@ stock void MapChoices_CopyGroupData(const int groupData[groupdata_t], int groupD
 {
 	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
 	
-	CopyStringMap(groupData[GroupData_GroupAttributes], groupDataCopy[GroupData_GroupAttributes]);
+	groupDataCopy[GroupData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes]);
 }
 
 /**
@@ -329,7 +445,7 @@ stock void MapChoices_CopyMapDataToGroupData(const int mapData[mapdata_t], int g
 {
 	strcopy(groupData[GroupData_Group], sizeof(groupData[GroupData_Group]), mapData[MapData_Group]);
 	
-	CopyStringMap(mapData[MapData_GroupAttributes], groupData[GroupData_GroupAttributes]);
+	groupData[GroupData_GroupAttributes] = CopyStringMap(mapData[MapData_GroupAttributes]);
 }
 
 /**
@@ -342,7 +458,7 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
 {
 	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), groupData[GroupData_Group]);
 	
-	CopyStringMap(groupData[GroupData_GroupAttributes], mapData[MapData_GroupAttributes]);
+	mapData[MapData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes]);
 }
 
 /**
@@ -379,6 +495,7 @@ stock ArrayList MapChoices_GetGroupList(ArrayList itemList)
  * @param itemList		The list of mapdata_t items
  * @param groupName		The group name to look for
  * 
+ * @deprecated			Will be removed when the mapdata rewrite is finished
  * @return ArrayList		An ArrayList of mapdata_t of the matching items.
  */
 stock ArrayList MapChoices_GetMapsInGroup(ArrayList itemList, const char[] groupName)
@@ -408,15 +525,20 @@ stock ArrayList MapChoices_GetMapsInGroup(ArrayList itemList, const char[] group
  * @param original	The StringMap to copy
  * @param copy		The StringMap to copy into.  If it is null, it will be created
  */
-stock void CopyStringMap(StringMap original, StringMap copy)
+stock StringMap CopyStringMap(StringMap original, Handle plugin = null)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
-		return;
+		return null;
 	
-	// This should always run as the copy should be empty, but...
-	if (copy == null)
-		copy = new StringMap();
+	StringMap copy = new StringMap();
+	
+	if (plugin != null)
+	{
+		StringMap tempCopy = copy;
+		copy = view_as<StringMap>(CloneHandle(tempCopy, plugin));
+		delete tempCopy;
+	}
 	
 	StringMapSnapshot snapshot = original.Snapshot();
 	
@@ -432,6 +554,8 @@ stock void CopyStringMap(StringMap original, StringMap copy)
 	}
 	
 	delete snapshot;
+	
+	return copy;
 }
 
 /**
