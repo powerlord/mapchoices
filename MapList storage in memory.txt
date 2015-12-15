@@ -1,0 +1,61 @@
+The more I work on MapChoices, the more I realize that the classic map list format is insufficient
+for what we need.
+
+As I post this, the current memory structure is this flatish structure:
+
+ArrayList of all maps
+|- mapdata_t mapData
+	|- char[] map
+	|- char[] group
+	|- StringMap mapAttributes
+		|- char[] value
+	|- StringMap groupAttributes
+		|- char[] value
+	
+groupdata_t also exists, but solely as a transfer medium.
+
+The obvious flaw in this model is that the group and groupAttributes are stored with the map itself.
+This makes it a mess to get a list of unique groups, as well as parsing group attributes.
+
+I've considered a few new formats.  The first was this:
+
+StringMap of all groups
+|- Arraylist
+	|- mapdata_t
+		|- char[] map
+		|- char[] group
+		|- StringMap mapAttributes
+			|- char[] value
+		|- StringMap groupAttributes
+			|- char[] value
+
+This fixes the group, but the groupAttributes are still off there in lala-land.
+
+So, that brings up a third version:
+
+StringMap of all groups
+|- groupdata_t
+	|- char[] group
+	|- StringMap groupAttributes
+		|- char[] value
+	|- StringMap maps
+		|- mapdata_t
+			|- char[] map
+			|- char[] group
+			|- StringMap mapAttributes
+				|- char[] value
+
+I originally considered an ArrayList at the maps level, but this makes it more difficult to pull up
+the mapAttributes given a map name.
+
+This version changes groupdata_t to a first class citizen.
+
+You now need to drill down farther to access the information you want.  This format also makes cleanup
+more complex. However, it also makes it considerably easier to pull up group information.
+
+I think some helper methods could be used to make this structure easier to use.
+
+Note that the group string is still in mapdata_t, as these are often passed to methods that need the mapdata
+and group name.
+
+Note: We're intentionally not using KeyValues, so don't suggest them.
