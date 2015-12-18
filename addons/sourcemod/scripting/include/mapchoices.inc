@@ -342,7 +342,7 @@ stock void MapChoices_DeleteGroupData(int groupData[groupdata_t])
 	delete groupData[GroupData_GroupAttributes];
 }
 
-stock void MapChoices_CloneGroup(const int groupData[groupdata_t], int groupDataCopy[groupdata_t], Handle plugin = null)
+stock void MapChoices_CloneGroup(const int groupData[groupdata_t], int groupDataCopy[groupdata_t], Handle plugin = null, bool includeMaps = true)
 {
 	StringMap mapList = new StringMap();
 	
@@ -356,23 +356,26 @@ stock void MapChoices_CloneGroup(const int groupData[groupdata_t], int groupData
 	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
 	groupDataCopy[GroupData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes], plugin);
 	
-	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
-	
-	for (int i = 0; i < snapshot.Length; i++)
+	if (includeMaps)
 	{
-		int keySize = snapshot.KeyBufferSize(i);
-		char[] key = new char[keySize];
-		snapshot.GetKey(i, key, keySize);
+		StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
 		
-		int mapData[mapdata_t];
-		int mapDataCopy[mapdata_t];
-		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+		for (int i = 0; i < snapshot.Length; i++)
+		{
+			int keySize = snapshot.KeyBufferSize(i);
+			char[] key = new char[keySize];
+			snapshot.GetKey(i, key, keySize);
+			
+			int mapData[mapdata_t];
+			int mapDataCopy[mapdata_t];
+			groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+			
+			MapChoices_CloneMap(mapData, mapDataCopy, plugin);
+			groupData[GroupData_MapList].SetArray(key, mapDataCopy, sizeof(mapDataCopy));
+		}
 		
-		MapChoices_CloneMap(mapData, mapDataCopy, plugin);
-		groupData[GroupData_MapList].SetArray(key, mapDataCopy, sizeof(mapDataCopy));
+		delete snapshot;
 	}
-	
-	delete snapshot;
 }
 
 stock StringMap CopyMapsFromArrayList(ArrayList mapArray, Handle plugin = null)
@@ -467,24 +470,30 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
  * 
  * @param itemList		The list of mapdata_t items
  * 
- * @return ArrayList		Arraylist of groupdata_t for each unique group string
+ * @return ArrayList		Arraylist of char[] for each group
  */
-stock ArrayList MapChoices_GetGroupList(ArrayList itemList)
+stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 {
 	ArrayList groupList = new ArrayList(groupdata_t);
 	
-	for (int i = 0; i < itemList.Length; i++)
+	StringMapSnapshot snapshot = itemList.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
 	{
-		int mapData[mapdata_t];
-		itemList.GetArray(i, mapData, sizeof(mapData));
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
 		
-		if (groupList.FindString(mapData[MapData_Group]) == -1)
-		{
-			int groupData[groupdata_t];
-			MapChoices_CopyMapDataToGroupData(mapData, groupData);
-			groupList.PushArray(groupData, sizeof(groupData));
-		}
+		int groupData[groupdata_t];
+		int groupDataCopy[groupdata_t];
+		itemList.GetArray(key, groupData, sizeof(groupData));
+		
+		MapChoices_CloneGroup(groupData, groupDataCopy, .includeMaps = false);
+		
+		groupList.PushArray(groupDataCopy);
 	}
+	
+	delete snapshot;
 	
 	return groupList;
 }
@@ -498,22 +507,32 @@ stock ArrayList MapChoices_GetGroupList(ArrayList itemList)
  * @deprecated			Will be removed when the mapdata rewrite is finished
  * @return ArrayList		An ArrayList of mapdata_t of the matching items.
  */
-stock ArrayList MapChoices_GetMapsInGroup(ArrayList itemList, const char[] groupName)
+stock ArrayList MapChoices_GetMapsInGroup(StringMap itemList, const char[] groupName)
 {
-	ArrayList newItems = new ArrayList(mapdata_t);
-	
-	for (int i = 0; i < itemList.Length; i++)
-	{
-		int mapData[mapdata_t];
-		itemList.GetArray(i, mapData, sizeof(mapData));
+	if (itemList == null)
+		return null;
 		
-		if (StrEqual(groupName, mapData[MapData_Group]))
-		{
-			// Make a copy
-			int mapDataCopy[mapdata_t];
-			MapChoices_CopyMapData(mapData, mapDataCopy);
-			newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
-		}
+	ArrayList newItems = new ArrayList(mapdata_t);
+	StringMap mapTrie;
+	itemList.GetValue(groupName, mapTrie);
+	
+	if (mapTrie == null)
+		return newItems;
+	
+	StringMapSnapshot snapshot = mapTrie.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		int mapData[mapdata_t];
+		int mapDataCopy[mapdata_t];
+		mapTrie.GetArray(key, mapData, sizeof(mapData));
+		MapChoices_CloneMap(mapData, mapDataCopy);
+		
+		newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
 	}
 	
 	return newItems;

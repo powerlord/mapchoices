@@ -571,6 +571,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 					else
 					{
 						// Shallow clone, deep clone isn't strictly needed (checkmapfilter will deep clone what it needs)
+						// TODO Update this to use a method that flattens the map list
 						potentials = g_MapList.Clone();
 					}
 					
