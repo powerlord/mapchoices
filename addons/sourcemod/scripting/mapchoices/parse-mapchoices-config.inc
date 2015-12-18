@@ -513,39 +513,24 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 	
 	while (findHandle.GetNext(fileName, sizeof(fileName), fileType))
 	{
-		char filePath[PLATFORM_MAX_PATH];
-		Format(filePath, sizeof(filePath), "%s/%s", directory, fileName);
-		
 		switch (fileType)
 		{
 			case FileType_File:
 			{
-				int trimEnd = strlen(filePath) - 4;
-				if (!StrEqual(filePath[trimEnd], ".bsp"))
+				int trimEnd = strlen(fileName) - 4;
+				if (!StrEqual(fileName[trimEnd], ".bsp"))
 					continue;
 				
 				int pMapData[mapdata_t];
 				
-				// Find the number of characters to skip
-				int size = strlen(directory);
-				if (FindCharInString(directory, '/') > -1)
-				{
-					size++;
-				}
-				
-				if (size >= strlen(filePath))
-				{
-					continue;
-				}
-				
+				fileName[trimEnd] = '\0';
 				// Trim the .bsp from the end and directory from the start
-				strcopy(pMapData[MapData_Map], trimEnd, filePath[size]);
+				strcopy(pMapData[MapData_Map], sizeof(pMapData[MapData_Map]), fileName);
 				
 				if (!IsMapValid(pMapData[MapData_Map]))
 					continue;
 				
-				strcopy(pMapData[MapData_Group], sizeof(pMapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
-				pMapData[MapData_MapAttributes] = null;
+				pMapData[MapData_MapAttributes] = new StringMap();
 				
 				files.PushArray(pMapData, sizeof(pMapData));
 			}
@@ -556,6 +541,9 @@ void FindMapsInDirectory(const char[] directory, ArrayList files)
 				if (StrEqual(directory, ".") || StrEqual(directory, ".."))
 					continue;
 				// Recursively call for subdirectories
+				char filePath[PLATFORM_MAX_PATH];
+				Format(filePath, sizeof(filePath), "%s/%s", directory, fileName);
+				
 				FindMapsInDirectory(filePath, files);
 			}
 		}
