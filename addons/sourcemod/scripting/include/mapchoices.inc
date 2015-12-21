@@ -976,7 +976,7 @@ typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress
  * @param mapData		A mapdata_t of the map or group's information
  * @return			Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
  */
-typedef MapChoices_HandlerVoteWon = function Action (int mapData[mapdata_t]);
+typedef MapChoices_HandlerVoteWon = function Action (MapChoices_MapChange when, int mapData[mapdata_t]);
 
 /**
  * If registered, this will be called when a vote is lost.

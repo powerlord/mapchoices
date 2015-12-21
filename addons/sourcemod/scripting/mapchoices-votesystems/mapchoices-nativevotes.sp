@@ -87,9 +87,9 @@ public void OnPluginEnd()
 	MapChoices_UnregisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress);
 }
 
-public Action Handler_VoteWon(int mapData[mapdata_t])
+public Action Handler_VoteWon(MapChoices_MapChange when, int mapData[mapdata_t])
 {
-	DisplayPass(g_NativeVote, mapData);
+	DisplayPass(g_NativeVote, mapData, when);
 }
 
 public Action Handler_VoteLost(MapChoices_VoteFailedType failType)
@@ -268,61 +268,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 				
 				case VoteCancel_NoVotes:
 				{
-					
-					// Old code, needs to be moved to core
-					/*
-					if (g_NoVotesSelect)
-					{
-						// Prevent infinite loop
-						int timeout = 0;
-						
-						char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
-						do
-						{
-							int winner = GetRandomInt(0, vote.ItemCount - 1);
-							vote.GetItem(winner, itemString, sizeof(itemString));
-							timeout++;
-						} while ((StrEqual(itemString, MAPCHOICES_EXTEND) || StrEqual(itemString, MAPCHOICES_NOCHANGE)) && timeout < 10);
-						
-						int mapData[mapdata_t];
-
-						switch (g_VoteType)
-						{
-							case MapChoices_MapVote:
-							{
-								g_ItemData.GetArray(itemString, mapData, sizeof(mapData));
-								
-								// Internal function
-								DisplayPass(vote, mapData);
-								
-								MapChoices_VoteSucceeded(g_VoteType, mapData, 0, 0);
-								MapChoices_DeleteMapData(mapData);
-							}
-							
-							case MapChoices_GroupVote:
-							{
-								int groupData[groupdata_t];
-								g_ItemData.GetArray(itemString, groupData, sizeof(groupData));
-								
-								MapChoices_CopyGroupDataToMapData(groupData, mapData);
-								
-								// Internal function
-								DisplayPass(vote, mapData);
-								
-								MapChoices_DeleteGroupData(groupData);
-							}
-						}
-						MapChoices_VoteSucceeded(g_VoteType, mapData, 0, 0);
-						MapChoices_DeleteMapData(mapData);
-					}
-					else
-					{
-						vote.DisplayFail(NativeVotesFail_NotEnoughVotes);
-						MapChoices_VoteFailed(g_VoteType, MapChoices_FailedNoVotes);
-					}
-					
-					*/
-					
+					// Prepare data to send back to core
 					for (int i = 0; i < vote.ItemCount; i++)
 					{
 						char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
@@ -467,7 +413,7 @@ public void Handler_MapVoteFinish(NativeVote vote,
 	*/
 }
 
-void DisplayPass(NativeVote vote, int mapData[mapdata_t])
+void DisplayPass(NativeVote vote, int mapData[mapdata_t], MapChoices_MapChange when)
 {
 	if (g_VoteType == MapChoices_GroupVote)
 	{
@@ -482,6 +428,13 @@ void DisplayPass(NativeVote vote, int mapData[mapdata_t])
 		char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
 		MapChoices_GetMapDisplayString(mapData, displayString, sizeof(displayString));
 		
-		vote.DisplayPass(displayString);
+		if (when == MapChoicesMapChange_Instant)
+		{
+			vote.DisplayPassEx(NativeVotesPass_ChgLevel, displayString);
+		}
+		else
+		{
+			vote.DisplayPass(displayString);
+		}
 	}
 }

@@ -61,7 +61,7 @@ int g_MapNominations[MAXPLAYERS+1][nominations_t];
 MapChoices_GameFlags g_GameFlags;
 
 //ConVars
-ConVar g_Cvar_Enabled;
+//ConVar g_Cvar_Enabled;
 ConVar g_Cvar_ExtendCount;
 ConVar g_Cvar_ExtendRounds;
 ConVar g_Cvar_ExtendFrags;
@@ -215,7 +215,8 @@ public void OnPluginStart()
 	LoadTranslations("mapchoices.phrases");
 	
 	CreateConVar("mapchoices_version", VERSION, "MapChoices version", FCVAR_NOTIFY|FCVAR_DONTRECORD|FCVAR_SPONLY);
-	g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
+	//MapChoices is not designed to be disabled.  Mainly because it does nothing on its own... disable its subplugins instead.
+	//g_Cvar_Enabled = CreateConVar("mapchoices_enable", "1", "Enable MapChoices?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	g_Cvar_ExtendCount = CreateConVar("mapchoices_extendcount", "3", "How many extensions are allowed per map", _, true, 0.0);
 	g_Cvar_ExtendRounds = CreateConVar("mapchoices_extendrounds", "2", "How many rounds to extend the map by per extension", _, true, 2.0);
 	g_Cvar_ExtendFrags = CreateConVar("mapchoices_extendfrags", "10", "How many frags to extend the map by. Only applies to games that use frags (HL2:DM, etc...)", _, true, 5.0);
@@ -232,7 +233,7 @@ public void OnPluginStart()
 	g_Cvar_NoVote = CreateConVar("mapchoices_novote", "1", "If no one votes, should MapChoices select a choice at random?", _, true, 0.0, true, 1.0);
 	g_Cvar_NoVoteButton = CreateConVar("mapchoices_novotebutton", "0", "Add No Vote button to votes?", _, true, 0.0, true, 1.0);
 	g_Cvar_Randomize = CreateConVar("mapchoices_randomize", "1", "Randomize the order of items in the vote?", _, true, 0.0, true, 1.0);
-	g_Cvar_Spectators = CreateConVar("mapchoices_allowspectators", "1", "Allow spectators to vote?", _, true, 0.0, true, 1.0);
+	g_Cvar_Spectators = CreateConVar("mapchoices_allowspectators", "1", "Allow spectators to vote? Disabling this on HL2:DM may have unexpected consequences", _, true, 0.0, true, 1.0);
 	
 	// Core map vote starting stuff
 	
@@ -259,7 +260,7 @@ public void OnPluginStart()
 	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Array, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Cell, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
 	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook, Param_CellByRef);
-	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Array);
+	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Cell, Param_Array);
 	g_Forward_HandlerVoteLost = CreateForward(ET_Hook, Param_Cell);
 		
 	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Array);
@@ -973,7 +974,7 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 		int mapData[mapdata_t];
 		items.GetArray(0, mapData, sizeof(mapData));
 		
-		Forward_VoteWon(mapData);
+		Forward_VoteWon(g_When, mapData);
 		
 		if (voteType == MapChoices_GroupVote)
 		{
@@ -1279,10 +1280,11 @@ Action Forward_VoteLost(MapChoices_VoteFailedType failType)
 	return result;
 }
 
-Action Forward_VoteWon(const int mapData[mapdata_t])
+Action Forward_VoteWon(MapChoices_MapChange when, const int mapData[mapdata_t])
 {
 	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_HandlerVoteWon);
+	Call_PushCell(when);
 	Call_PushArray(mapData, sizeof(mapData));
 	Call_Finish(result);
 	
