@@ -465,7 +465,7 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
 }
 
 /**
- * Given a mapdata_t ArrayList, get back a char[] ArrayList of group names
+ * Given an itemList, get back a groupdata_t ArrayList of groups
  * You may want to cache this as it only will change when the serial changes
  * 
  * @param itemList		The list of mapdata_t items
@@ -474,6 +474,9 @@ stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], i
  */
 stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 {
+	if (itemList == null)
+		ThrowError("Null itemList not allowed.");
+	
 	ArrayList groupList = new ArrayList(groupdata_t);
 	
 	StringMapSnapshot snapshot = itemList.Snapshot();
@@ -501,7 +504,7 @@ stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 /**
  * Given an itemList and group name, return an ArrayList of all mapdata_t items with the matching group
  * 
- * @param itemList		The list of mapdata_t items
+ * @param itemList		A list returned from MapChoices_ReadMapList
  * @param groupName		The group name to look for
  * 
  * @deprecated			Will be removed when the mapdata rewrite is finished
@@ -510,16 +513,24 @@ stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 stock ArrayList MapChoices_GetMapsInGroup(StringMap itemList, const char[] groupName)
 {
 	if (itemList == null)
-		return null;
+		ThrowError("Null itemList not allowed.");
 		
 	ArrayList newItems = new ArrayList(mapdata_t);
-	StringMap mapTrie;
-	itemList.GetValue(groupName, mapTrie);
+	int groupData[groupdata_t];
 	
-	if (mapTrie == null)
+	if (!itemList.GetArray(groupName, groupData, sizeof(groupData)))
+	{
+		LogError("itemList does not have a group named \"%s\"", groupName);
 		return newItems;
+	}
 	
-	StringMapSnapshot snapshot = mapTrie.Snapshot();
+	if (groupData[GroupData_MapList] == null)
+	{
+		LogError("itemList group \"%s\" has no map list", groupName);
+		return newItems;
+	}
+	
+	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
 	
 	for (int i = 0; i < snapshot.Length; i++)
 	{
@@ -529,11 +540,66 @@ stock ArrayList MapChoices_GetMapsInGroup(StringMap itemList, const char[] group
 		
 		int mapData[mapdata_t];
 		int mapDataCopy[mapdata_t];
-		mapTrie.GetArray(key, mapData, sizeof(mapData));
+		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
 		MapChoices_CloneMap(mapData, mapDataCopy);
 		
 		newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
 	}
+	
+	return newItems;
+}
+
+/**
+ * Get a list of all maps in the itemList
+ * 
+ * @param itemList		A list returned from MapChoices_ReadMapList
+ * @return ArrayList		An ArrayList of mapdata_t items.
+ */
+stock ArrayList MapChoices_GetAllMaps(StringMap itemList)
+{
+	if (itemList == null)
+		ThrowError("Null itemList not allowed.");
+	
+	ArrayList newItems = new ArrayList(mapdata_t);
+	
+	StringMapSnapshot groupSnapshot = itemList.Snapshot();
+	
+	for (int i = 0; i < groupSnapshot.Length; i++)
+	{
+		int groupKeySize = groupSnapshot.KeyBufferSize(i);
+		char[] groupName = new char[groupKeySize];
+		groupSnapshot.GetKey(i, groupName, groupKeySize);
+		
+		int groupData[groupdata_t];
+
+		itemList.GetArray(groupName, groupData, sizeof(groupData));
+		
+		if (groupData[GroupData_MapList] == null)
+		{
+			LogError("itemList group \"%s\" has no map list", groupName);
+			continue;
+		}
+			
+		StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
+		
+		for (int j = 0; j < snapshot.Length; j++)
+		{
+			int keySize = snapshot.KeyBufferSize(j);
+			char[] key = new char[keySize];
+			snapshot.GetKey(j, key, keySize);
+			
+			int mapData[mapdata_t];
+			int mapDataCopy[mapdata_t];
+			groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+			MapChoices_CloneMap(mapData, mapDataCopy);
+			
+			newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
+		}
+		
+		delete snapshot;
+	}
+	
+	delete groupSnapshot;
 	
 	return newItems;
 }
@@ -874,6 +940,8 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
 /**
  * Tells a vote system plugin to start a vote.
  * 
+ * @param voters			Who is in the vote?
+ * @param voterCount		How many voters are there?
  * @param duration		How long should the vote last?
  * @param voteType		Which vote type is this: Map or Group?
  * @param itemList		A flat ArrayList of items.
@@ -881,7 +949,7 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
  * 
  * @return				Plugin_Handled to indicate that a vote system handled this vote start
  */
-typedef MapChoices_HandlerStartVote = function Action (int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption);
+typedef MapChoices_HandlerStartVote = function Action (int[] voters, int voterCount, int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption);
 
 /**
  * Tells a vote system plugin to cancel a vote.

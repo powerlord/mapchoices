@@ -111,7 +111,7 @@ public Action Handler_VoteLost(MapChoices_VoteFailedType failType)
 }
 
 // If Extend or No Change are in a vote, they should have been passed in the itemList from core
-public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
+public Action Handler_StartVote(int[] voters, int voterCount, int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
@@ -196,7 +196,7 @@ public Action Handler_StartVote(int duration, MapChoices_VoteType voteType, Arra
 	
 	g_NativeVote.NoVoteButton = noVoteOption;
 	
-	g_NativeVote.DisplayVoteToAll(duration);
+	g_NativeVote.DisplayVote(voters, voterCount, duration);
 	
 	return Plugin_Handled;
 }

@@ -77,6 +77,8 @@ ConVar g_Cvar_RunoffPercent;
 ConVar g_Cvar_RunoffTime;
 ConVar g_Cvar_NoVote;
 ConVar g_Cvar_NoVoteButton;
+ConVar g_Cvar_Randomize;
+ConVar g_Cvar_Spectators;
 
 // Valve ConVars
 //ConVar g_Cvar_Timelimit;
@@ -120,7 +122,7 @@ bool g_bMapVoteInProgress = false;
 bool g_bMapVoteCompleted = false;
 bool g_bMapChanged = false;
 
-ArrayList g_MapList = null;
+StringMap g_MapList = null;
 int g_Serial = -1;
 
 char g_MapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
@@ -229,6 +231,8 @@ public void OnPluginStart()
 	g_Cvar_RunoffTime = CreateConVar("mapchoices_runofftime", "5.0", "How long (in seconds) to wait before starting a runoff vote.", _, true, 5.0, true, 15.0);
 	g_Cvar_NoVote = CreateConVar("mapchoices_novote", "1", "If no one votes, should MapChoices select a choice at random?", _, true, 0.0, true, 1.0);
 	g_Cvar_NoVoteButton = CreateConVar("mapchoices_novotebutton", "0", "Add No Vote button to votes?", _, true, 0.0, true, 1.0);
+	g_Cvar_Randomize = CreateConVar("mapchoices_randomize", "1", "Randomize the order of items in the vote?", _, true, 0.0, true, 1.0);
+	g_Cvar_Spectators = CreateConVar("mapchoices_allowspectators", "1", "Allow spectators to vote?", _, true, 0.0, true, 1.0);
 	
 	// Core map vote starting stuff
 	
@@ -252,7 +256,7 @@ public void OnPluginStart()
 	g_Forward_NominationAdded = CreateGlobalForward("MapChoices_OnNominationAdded", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	g_Forward_NominationRemoved = CreateGlobalForward("MapChoices_OnNominationRemoved", ET_Ignore, Param_String, Param_String, Param_Cell, Param_Cell);
 	
-	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Cell, Param_Cell);
+	g_Forward_HandlerVoteStart = CreateForward(ET_Hook, Param_Array, Param_Cell, Param_Cell, Param_Cell, Param_Cell, Param_Array, Param_Cell, Param_Cell);
 	g_Forward_HandlerCancelVote = CreateForward(ET_Hook);
 	g_Forward_HandlerIsVoteInProgress = CreateForward(ET_Hook, Param_CellByRef);
 	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Array);
@@ -263,7 +267,7 @@ public void OnPluginStart()
 	
 	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
-	g_MapList = new ArrayList(mapdata_t);
+	g_MapList = new StringMap();
 	
 	HookEvent("round_end", Event_RoundEnd);
 	HookEventEx("round_win", Event_RoundEnd);
@@ -572,7 +576,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 					{
 						// Shallow clone, deep clone isn't strictly needed (checkmapfilter will deep clone what it needs)
 						// TODO Update this to use a method that flattens the map list
-						potentials = g_MapList.Clone();
+						potentials = MapChoices_GetAllMaps(g_MapList);
 					}
 					
 					while (itemList.Length < limit && potentials.Length > 0)
@@ -619,9 +623,27 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 	g_When = when;
 	g_bMapVoteInProgress = true;
 	
-	Forward_MapVoteStarted();
+	// Fisher-Yates shuffle the itemList
+	if (g_Cvar_Randomize.BoolValue)
+		ShuffleItemList(itemList);
 	
-	Action result = Forward_VoteStart(g_Cvar_VoteTime.IntValue, voteType, itemList, g_Cvar_NoVoteButton.BoolValue);
+	Forward_MapVoteStarted();
+
+	int[] voters = new int[MaxClients];
+	int voterCount = 0;
+	
+	for (int i = 1; i <= MaxClients; i++)
+	{
+		if (IsClientInGame(i) && !IsFakeClient(i))
+		{
+			if (!g_Cvar_Spectators.BoolValue || (g_Cvar_Spectators.BoolValue && GetClientTeam(i) > view_as<int>(MapChoices_TeamSpectator)))
+			{
+				voters[voterCount++] = i;
+			}
+		}
+	}
+	
+	Action result = Forward_VoteStart(voters, voterCount, g_Cvar_VoteTime.IntValue, voteType, itemList, g_Cvar_NoVoteButton.BoolValue);
 	
 	if (result == Plugin_Continue)
 	{
@@ -672,11 +694,22 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 		
 		vote.NoVoteButton = g_Cvar_NoVoteButton.BoolValue;
 		vote.VoteResultCallback = Handler_MapVoteFinish;
-		vote.DisplayVoteToAll(g_Cvar_VoteTime.IntValue);
+		
+		vote.DisplayVote(voters, voterCount, g_Cvar_VoteItems.IntValue);
 	}
 	
 	// Clean up itemList here
 	delete itemList;
+}
+
+void ShuffleItemList(ArrayList itemList)
+{
+	// Fisher-Yates shuffle
+	for (int i = 0; i < itemList.Length - 1; i++)
+	{
+		int j = GetRandomInt(i, itemList.Length - 1);
+		itemList.SwapAt(i, j);
+	}
 }
 
 public int Handler_MapVote(Menu vote, MenuAction action, int param1, int param2)
@@ -1201,10 +1234,12 @@ void Forward_NominationRemoved(const char[] group, const char[] map, int owner, 
 
 // Private
 
-Action Forward_VoteStart(int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
+Action Forward_VoteStart(int[] voters, int voterCount, int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption)
 {
 	Action result = Plugin_Continue;
 	Call_StartForward(g_Forward_HandlerVoteStart);
+	Call_PushArray(voters, voterCount);
+	Call_PushCell(voterCount);
 	Call_PushCell(duration);
 	Call_PushCell(voteType);
 	Call_PushCell(itemList);
