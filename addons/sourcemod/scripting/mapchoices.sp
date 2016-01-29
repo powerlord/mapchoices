@@ -105,6 +105,8 @@ Handle g_Forward_HandlerIsVoteInProgress;
 Handle g_Forward_HandlerVoteWon;
 Handle g_Forward_HandlerVoteLost;
 
+Handle g_Forward_VoteFinished;
+
 Handle g_Forward_MapFilter;
 Handle g_Forward_GroupFilter;
 
@@ -283,6 +285,7 @@ public void OnMapStart()
 	
 	g_Extends = 0;
 	
+	g_bIsRunoff = false;
 	g_bChangeAtRoundEnd = false;
 	g_bTempIgnoreRoundEnd = false;
 	
@@ -437,7 +440,7 @@ void InitializeVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_Vo
 {
 	// This is set to false here as it is only used after this point
 	g_bMapChanged = false;
-	if (g_Cvar_WarningTime.IntValue == 0)
+	if ((g_bIsRunoff && g_Cvar_RunoffTime.IntValue == 0) || (!g_bIsRunoff && g_Cvar_WarningTime.IntValue == 0))
 	{
 		StartVote(when, itemList, voteType);
 	}
@@ -446,7 +449,15 @@ void InitializeVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_Vo
 		Forward_WarningTimerStarted(g_Cvar_WarningTime.IntValue, g_bIsRunoff);
 		DataPack data;
 		CreateDataTimer(1.0, Timer_WarningTimer, data, TIMER_REPEAT);
-		data.WriteCell(g_Cvar_WarningTime.IntValue);
+		
+		if (g_bIsRunoff)
+		{
+			data.WriteCell(g_Cvar_RunoffTime.IntValue);
+		}
+		else
+		{
+			data.WriteCell(g_Cvar_WarningTime.IntValue);
+		}
 		data.WriteCell(when);
 		data.WriteCell(itemList);
 		data.WriteCell(voteType);
@@ -719,6 +730,7 @@ public int Handler_MapVote(Menu vote, MenuAction action, int param1, int param2)
 	{
 		case MenuAction_End:
 		{
+			// g_ItemData is copied out when this vote ends
 			delete g_ItemData;
 			delete vote;
 		}
@@ -786,6 +798,9 @@ public int Handler_MapVote(Menu vote, MenuAction action, int param1, int param2)
 	return 0;
 }
 
+/**
+ * Collect vote data and votes to pass to master vote handler
+ */
 public void Handler_MapVoteFinish(Menu vote,
 					int num_votes,
 					int num_clients,
@@ -793,7 +808,21 @@ public void Handler_MapVoteFinish(Menu vote,
 					int num_items,
 					const int[][] item_info)
 {
-	// TODO Implement this
+	ArrayList items = new ArrayList(mapdata_t);
+	ArrayList voteData = new ArrayList();
+	
+	for (int i = 0; i < num_items; i++)
+	{
+		char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
+		int mapData[mapdata_t];
+		vote.GetItem(item_info[i][VOTEINFO_ITEM_INDEX], item, sizeof(item));
+		
+		g_ItemData.GetArray(item, mapData, sizeof(mapData));
+		items.PushArray(mapData, sizeof(mapData));
+		voteData.Push(item_info[i][VOTEINFO_ITEM_VOTES]);
+	}
+	
+	Internal_VoteCompleted(g_VoteType, items, voteData, num_votes, false);
 }
 
 int GetVoteLimit()
@@ -939,7 +968,7 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 	
 	int votePercent = RoundFloat(float(itemVotes) / float(totalVotes) * 100.0);
 	
-	if (votePercent < g_Cvar_RunoffPercent.IntValue && !g_bIsRunoff)
+	if (g_Cvar_Runoffs.BoolValue && votePercent < g_Cvar_RunoffPercent.IntValue && !g_bIsRunoff)
 	{
 		// TODO: Choose if we want to do anything with result
 		Forward_VoteLost(MapChoices_FailedQuorum);
@@ -971,28 +1000,14 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 	}
 	else
 	{
+		g_bIsRunoff = false;
+		
 		int mapData[mapdata_t];
 		items.GetArray(0, mapData, sizeof(mapData));
 		
 		Forward_VoteWon(g_When, mapData);
 		
-		if (voteType == MapChoices_GroupVote)
-		{
-			PrintToChatAll("%t", "MapChoices Group Voting Finished", mapData[MapData_Group], votePercent, totalVotes);
-			
-			if (g_MasterVoteType == MapChoices_TieredVote)
-			{
-				// TODO Set up map vote
-			}
-			else
-			{
-				// TODO Select random non-recently played map
-				char map[PLATFORM_MAX_PATH];
-				g_bMapVoteCompleted = true;
-				Forward_MapVoteEnded(mapData[MapData_Group], map);
-			}
-		}
-		else if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND))
+		if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND))
 		{
 			PrintToChatAll("%t", "MapChoices Current Map Extended", votePercent, totalVotes);
 			ExtendMap();
@@ -1003,6 +1018,27 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 		{
 			PrintToChatAll("%t", "MapChoices Current Map Stays", votePercent, totalVotes);
 			Forward_MapVoteEnded(mapData[MapData_Group], mapData[MapData_Map]);
+		}
+		else if (voteType == MapChoices_GroupVote)
+		{
+			PrintToChatAll("%t", "MapChoices Group Voting Finished", mapData[MapData_Group], votePercent, totalVotes);
+			
+			if (g_MasterVoteType == MapChoices_TieredVote)
+			{
+				
+				ArrayList newItemList = MapChoices_GetMapsInGroup(g_MapList, mapData[MapData_Group]);
+				InitializeVote(g_When, newItemList, MapChoices_MapVote);
+				// TODO Set up map vote
+			}
+			else
+			{
+				char map[PLATFORM_MAX_PATH];
+				
+				// TODO Select random non-recently played map from group
+				
+				g_bMapVoteCompleted = true;
+				Forward_MapVoteEnded(mapData[MapData_Group], map);
+			}
 		}
 		else
 		{
@@ -1024,6 +1060,8 @@ void SelectWinner(MapChoices_VoteType voteType, ArrayList items, ArrayList votes
 			Forward_MapVoteEnded(mapData[MapData_Group], mapData[MapData_Map]);
 			SetNextMap(mapData[MapData_Map]);
 		}
+		
+		Forward_VoteFinished(voteType);
 	}
 }
 
@@ -1196,6 +1234,9 @@ void Forward_MapVoteEnded(const char[] group, const char[] map)
 	Call_PushString(group);
 	Call_PushString(map);
 	Call_Finish();
+	
+	// This needs to be deleted every time a full vote finished
+	delete g_Forward_VoteFinished;	
 }
 
 void Forward_WarningTimerStarted(int seconds, bool runoff)
@@ -1322,6 +1363,17 @@ Action Forward_ChangeMap(const char[] map, bool isRoundEnd)
 	return result;
 }
 
+void Forward_VoteFinished(MapChoices_VoteType voteType)
+{
+	if (g_Forward_VoteFinished != null)
+	{
+		Call_StartForward(g_Forward_VoteFinished);
+		Call_PushCell(voteType);
+		Call_Finish();
+	}
+}
+
+
 ////////////////////////////////////////////////////////////////////////
 // Natives
 
@@ -1430,7 +1482,11 @@ public int Native_InitiateVote(Handle plugin, int numParams)
 	
 	Function finishedFunction = GetNativeFunction(4);
 
-	// TODO: Fix this to handle Group and Tier votes
+	if (finishedFunction != INVALID_FUNCTION)
+	{
+		g_Forward_VoteFinished = CreateForward(ET_Ignore, Param_Cell);
+		AddToForward(g_Forward_VoteFinished, plugin, finishedFunction);
+	}
 	
 	MapChoices_VoteType voteType = view_as<MapChoices_VoteType>(g_Cvar_VoteType.IntValue);
 	
@@ -1447,8 +1503,6 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 	bool canceled = GetNativeCell(5);
 	
 	Internal_VoteCompleted(voteType, items, votes, totalVotes, canceled);
-	
-	// TODO Finish this
 }
 
 // native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
