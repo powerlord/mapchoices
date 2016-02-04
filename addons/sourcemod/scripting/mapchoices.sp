@@ -602,6 +602,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 							itemList.PushArray(mapData);
 						}
 						
+						MapChoices_DeleteMapData(mapData);
 						potentials.Erase(random);
 					}
 					
@@ -622,6 +623,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 							itemList.PushArray(groupData);
 						}
 						
+						MapChoices_DeleteGroupData(groupData);
 						potentials.Erase(random);
 					}
 				}
