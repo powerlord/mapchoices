@@ -32,31 +32,110 @@
  */
 #include <sourcemod>
 
-#include "include/mapchoices" // Include our own file to gain access to enums and the like
 #include <sdktools>
 #include <multicolors>
 
 #pragma semicolon 1
 #pragma newdecls required
-#define VERSION "1.0.0 alpha 1"
+
+#include "include/mapchoices" // Include our own file to gain access to enums and the like
+
+#define VERSION "1.0.0 alpha 2"
 
 #define ERASE_MAP_NOMINATIONS -1
 
-// SM 1.6 style array to store nominations data
-// Note that NominationsData_Nominators is not used in g_MapNominations
-enum nominations_t
+enum FilterType:
 {
-	String:NominationsData_Map[PLATFORM_MAX_PATH],
-	String:NominationsData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
-	StringMap:NominationsData_MapAttributes,
-	StringMap:NominationsData_GroupAttributes,
-	ArrayList:NominationsData_Nominators,
+	GroupFilter,
+	MapFilter,
 }
+
+// SM 1.10 enum struct to store nominations data
+// Note that NominationsData_Nominators is not used in g_MapNominations
+enum struct Nominations
+{
+	char map[PLATFORM_MAX_PATH];
+	char group[MAPCHOICES_MAX_GROUP_LENGTH];
+	StringMap mapAttributes;
+	StringMap groupAttributes;
+	ArrayList nominators;
+}
+
+/*
+ * SourceMod 1.10 enum struct
+ * Data structure for storing map data
+ * Classic mode maplists will have the group set to MAPCHOICES_DEFAULTGROUP and null MapAttributes (to save a Handle)
+ */
+enum struct MapData
+{
+	char map[PLATFORM_MAX_PATH];
+	char group[MAPCHOICES_MAX_GROUP_LENGTH];
+	StringMap attributes; // <char[], char[]>
+	
+	/*
+	 * Clean up all handles used by this enum.
+	 *
+	 * This function largely exists in case we change this enum between versions
+	 * For example, during early alpha this struct also had a groupdata_t
+	 *
+	 * @noreturn	 
+	 */
+    void Close()
+    {
+    	delete this.attributes;
+    }
+};
+
+/*
+ * SM 1.10 enum-struct
+ * Data structure for storing group data
+ * Note that groupAttributes may be null if there were no attributes
+ * MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
+ */
+enum struct GroupData
+{
+	char group[MAPCHOICES_MAX_GROUP_LENGTH]; // Must exist for subplugins despite being redundant
+	StringMap attributes; // <char[], char[]>
+	StringMap mapList; // <char[], StringMap<char[], char[]>>
+	
+	/*
+	 * Clean up all handles used by this enum.
+	 *
+	 * This includes all map attributes lists
+	 *
+	 * @noreturn 
+	 */
+	void Close()
+	{
+		delete this.attributes;
+		
+		// We need to close all the map attribute handles before deleting the mapList
+		if (this.mapList != null)
+		{
+			StringMapSnapshot snapshot = this.mapList.Snapshot();
+	
+			for (int i = 0; i < snapshot.Length; i++)
+			{
+				int keySize = snapshot.KeyBufferSize(i);
+				char[] map = new char[keySize];
+				snapshot.GetKey(i, map, keySize);
+				
+				StringMap mapAttributes;
+				this.mapList.GetValue(map, mapAttributes);
+				
+				delete mapAttributes;
+			}
+
+			delete snapshot;
+			delete this.mapList;
+		}
+	}
+};
 
 // ArrayList of nominations_t
 ArrayList g_Array_NominatedMaps;
 
-int g_MapNominations[MAXPLAYERS+1][nominations_t];
+Nominations g_MapNominations[MAXPLAYERS+1];
 
 MapChoices_GameFlags g_GameFlags;
 
@@ -239,7 +318,7 @@ public void OnPluginStart()
 	
 	// Core map vote starting stuff
 	
-	g_Array_NominatedMaps = new ArrayList(nominations_t);
+	g_Array_NominatedMaps = new ArrayList(sizeof(Nominations));
 	
 	// Valve cvars
 	// g_Cvar_Timelimit = FindConVar("mp_timelimit");
@@ -265,8 +344,8 @@ public void OnPluginStart()
 	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Cell, Param_Array);
 	g_Forward_HandlerVoteLost = CreateForward(ET_Hook, Param_Cell);
 		
-	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Array);
-	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_Array);
+	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Cell);
+	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_Cell);
 	
 	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
@@ -325,10 +404,10 @@ stock int FindMapInNominations(const char[] group, const char[] map)
 	
 	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
 	{
-		int nominationsData[nominations_t];
+		Nominations nominationsData;
 		g_Array_NominatedMaps.GetArray(i, nominationsData, sizeof(nominationsData));
 		
-		if (StrEqual(map, nominationsData[NominationsData_Map]) && StrEqual(group, nominationsData[NominationsData_Group]))
+		if (StrEqual(map, nominationsData.map) && StrEqual(group, nominationsData.group))
 		{
 			return i;
 		}
@@ -353,54 +432,54 @@ stock bool RemoveMapFromNominations(const char[] group, const char[] map, int cl
 	{
 		bool removed = false;
 		
-		int nominationsData[nominations_t];
+		Nominations nominationsData;
 		g_Array_NominatedMaps.GetArray(location, nominationsData, sizeof(nominationsData));
 		
 		if (client != ERASE_MAP_NOMINATIONS)
 		{
-			int pos = nominationsData[NominationsData_Nominators].FindValue(client);
+			int pos = nominationsData.nominators.FindValue(client);
 			
 			// This should always exist unless something went wrong
 			if (pos > -1)
 			{
-				nominationsData[NominationsData_Nominators].Erase(pos);
+				nominationsData.nominators.Erase(pos);
 
-				if (nominationsData[NominationsData_Nominators].Length == 0)
+				if (nominationsData.nominators.Length == 0)
 				{
 					// Whoops, no more nominations for this map, so lets remove it
-					delete nominationsData[NominationsData_Nominators]; // close handle for nominated map
+					delete nominationsData.nominators; // close handle for nominated map
 					g_Array_NominatedMaps.Erase(location);
 					removed = true;
 				}
 				
-				Forward_NominationRemoved(nominationsData[NominationsData_Map], nominationsData[NominationsData_Group],
+				Forward_NominationRemoved(nominationsData.map, nominationsData.group,
 				client, removed);
 				
 			}
 
-			g_MapNominations[client][NominationsData_Map][0] = '\0';
-			g_MapNominations[client][NominationsData_Group][0] = '\0';
+			g_MapNominations[client].map[0] = '\0';
+			g_MapNominations[client].group[0] = '\0';
 		}
 		else
 		{
 			// Erase all nominations
-			int count = nominationsData[NominationsData_Nominators].Length;
+			int count = nominationsData.nominators.Length;
 			int loopClient;
 			
 			for (int i = count - 1; i >= 0; i--)
 			{
 				bool last = i == 0 ? true : false;
-				loopClient = nominationsData[NominationsData_Nominators].Get(i);
+				loopClient = nominationsData.nominators.Get(i);
 				
-				Forward_NominationRemoved(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map],
+				Forward_NominationRemoved(nominationsData.group, nominationsData.map,
 					loopClient, last);
 
-				g_MapNominations[loopClient][NominationsData_Map][0] = '\0';
-				g_MapNominations[loopClient][NominationsData_Group][0] = '\0';
+				g_MapNominations[loopClient].map[0] = '\0';
+				g_MapNominations[loopClient].group[0] = '\0';
 			}
 			
 			// Since we removed all client nominations...
-			delete nominationsData[NominationsData_Nominators]; // close handle for nominated map
+			delete nominationsData.nominators; // close handle for nominated map
 			g_Array_NominatedMaps.Erase(location);
 		}
 		
@@ -417,12 +496,12 @@ stock bool RemoveAllMapNominations(const char[] group, const char[] map)
 
 stock bool RemoveClientMapNomination(int client)
 {
-	if (g_MapNominations[client][NominationsData_Map][0] != '\0' && g_MapNominations[client][NominationsData_Group][0] != '\0')
+	if (g_MapNominations[client].map[0] != '\0' && g_MapNominations[client].group[0] != '\0')
 	{
-		RemoveMapFromNominations(g_MapNominations[client][NominationsData_Map], g_MapNominations[client][NominationsData_Group], client);
+		RemoveMapFromNominations(g_MapNominations[client].map, g_MapNominations[client].group, client);
 	}
-	g_MapNominations[client][NominationsData_Map][0] = '\0';
-	g_MapNominations[client][NominationsData_Group][0] = '\0';
+	g_MapNominations[client].map[0] = '\0';
+	g_MapNominations[client].group[0] = '\0';
 }
 
 void InternalLoadMapList()
@@ -528,23 +607,23 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 		InternalLoadMapList();
 		
 		if (itemList == null)
-			itemList = new ArrayList(mapdata_t);
+			itemList = new ArrayList(sizeof(MapData));
 		
 		// Add Extend or Don't Change to the list
 		if (itemList.Length < limit)
 		{
 			if (when == MapChoicesMapChange_MapEnd && g_Extends < g_Cvar_ExtendCount.IntValue)
 			{
-				int mapData[mapdata_t];
-				strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), MAPCHOICES_EXTEND);
-				strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
+				MapData mapData;
+				strcopy(mapData.map, sizeof(mapData.map]), MAPCHOICES_EXTEND);
+				strcopy(mapData.group, sizeof(mapData.group), MAPCHOICES_DEFAULTGROUP);
 				itemList.PushArray(mapData, sizeof(mapData));
 			}
 			else if (when != MapChoicesMapChange_MapEnd && g_Cvar_DontChange.BoolValue)
 			{
-				int mapData[mapdata_t];
-				strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), MAPCHOICES_NOCHANGE);
-				strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), MAPCHOICES_DEFAULTGROUP);
+				MapData mapData;
+				strcopy(mapData.map, sizeof(mapData.map), MAPCHOICES_NOCHANGE);
+				strcopy(mapData.group, sizeof(mapData.group), MAPCHOICES_DEFAULTGROUP);
 				itemList.PushArray(mapData, sizeof(mapData));
 			}
 		}
@@ -553,21 +632,21 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 		while (itemList.Length < limit && g_Array_NominatedMaps.Length > 0)
 		{
 			//TODO Figure out what to do for a group vote.
-			int nominationsData[nominations_t];
-			int mapData[mapdata_t];
+			Nominations nominationsData;
+			MapData mapData;
 			
 			int random = GetRandomInt(0, g_Array_NominatedMaps.Length - 1);
 			g_Array_NominatedMaps.GetArray(random, nominationsData, sizeof(nominationsData));
 			
 			CopyNominationsDataToMapData(nominationsData, mapData);
 			// We must filter out maps here even if they were OK during the nomination phase
-			if (!CheckMapFilter(mapData))
+			if (!CheckMapFilter(mapData.attributes))
 			{
 				itemList.PushArray(mapData, sizeof(mapData));
 			}
 			
 			// Remove the map from the nominations list regardless of how many people nominated it.
-			RemoveAllMapNominations(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map]);
+			RemoveAllMapNominations(nominationsData.group, nominationsData.map);
 		}
 		
 		int neededMaps = limit - itemList.Length;
@@ -594,7 +673,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 					while (itemList.Length < limit && potentials.Length > 0)
 					{
 						int random = GetRandomInt(0, potentials.Length - 1);
-						int mapData[mapdata_t];
+						MapData mapData;
 						potentials.GetArray(random, mapData, sizeof(mapData));
 						
 						if (!CheckMapFilter(mapData))
@@ -602,7 +681,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 							itemList.PushArray(mapData);
 						}
 						
-						MapChoices_DeleteMapData(mapData);
+						//MapChoices_DeleteMapData(mapData);
 						potentials.Erase(random);
 					}
 					
@@ -615,7 +694,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 					while (itemList.Length < limit && potentials.Length > 0)
 					{
 						int random = GetRandomInt(0, potentials.Length - 1);
-						int groupData[groupdata_t];
+						GroupData groupData;
 						potentials.GetArray(random, groupData, sizeof(groupData));
 						
 						if (!CheckGroupFilter(groupData))
@@ -623,7 +702,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 							itemList.PushArray(groupData);
 						}
 						
-						MapChoices_DeleteGroupData(groupData);
+						//MapChoices_DeleteGroupData(groupData);
 						potentials.Erase(random);
 					}
 				}
@@ -671,8 +750,8 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 		
 		for (int i = 0; i < itemList.Length; i++)
 		{
-			int mapData[mapdata_t];
-			int mapDataCopy[mapdata_t];
+			MapData mapData;
+			MapData mapDataCopy;
 			itemList.GetArray(i, mapData, sizeof(mapData));
 			MapChoices_CopyMapData(mapData, mapDataCopy);
 			
@@ -870,18 +949,12 @@ bool Core_IsVoteInProgress()
 	return IsVoteInProgress();
 }
 
-bool CheckMapFilter(const int mapData[mapdata_t])
+bool CheckFilter(FilterType type, StringMap attributes)
 {
-	if (mapData[MapData_Group][0] == '\0' || mapData[MapData_Map][0] == '\0')
-	{
-		return false;
-	}
+	// Deep copy so that subplugins can't overwrite master data
+	StringMap attributesCopy = CopyCharStringMap(attributes);
 	
-	// Deep copy so that subplugins can't overwrite data
-	int mapDataCopy[mapdata_t];
-	MapChoices_CopyMapData(mapData, mapDataCopy);
-	
-	Action result = Forward_CheckMapFilter(mapDataCopy);
+	Action result = Forward_CheckMapFilter(attributesCopy);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -890,18 +963,12 @@ bool CheckMapFilter(const int mapData[mapdata_t])
 	return true;
 }
 
-bool CheckGroupFilter(const int groupData[groupdata_t])
+bool CheckGroupFilter(StringMap attributes)
 {
-	if (groupData[GroupData_Group][0] == '\0')
-	{
-		return false;
-	}
-
 	// Deep copy so that subplugins can't overwrite master data
-	int groupDataCopy[groupdata_t];
-	MapChoices_CopyGroupData(groupData, groupDataCopy);
+	StringMap attributesCopy = CopyCharStringMap(attributes);
 	
-	Action result = Forward_CheckGroupFilter(groupDataCopy);
+	Action result = Forward_CheckGroupFilter(attributesCopy);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -1077,49 +1144,48 @@ MapChoices_NominateResult InternalNominateMap(const int mapData[mapdata_t], int 
 	RemoveClientMapNomination(owner);
 	
 	bool newMap = false;
-	int nominationsData[nominations_t];
+	Nominations nominationsData;
 
 	int pos = FindMapInNominations(mapData[MapData_Group], mapData[MapData_Map]);
 	if (pos > -1)
 	{
 		g_Array_NominatedMaps.GetArray(pos, nominationsData, sizeof(nominationsData));
 		
-		nominationsData[NominationsData_Nominators].Push(owner);
+		nominationsData.nominators.Push(owner);
 		
 	}
 	else
 	{
 		// Create the data for this nomination
 		CopyMapDataToNominationsData(mapData, nominationsData);
-		nominationsData[NominationsData_Nominators] = new ArrayList();
-		nominationsData[NominationsData_Nominators].Push(owner);
+		nominationsData.nominators = new ArrayList();
+		nominationsData.nominators.Push(owner);
 		
 		g_Array_NominatedMaps.PushArray(nominationsData);
 		newMap = true;
 	}
 	
-	Forward_NominationAdded(nominationsData[NominationsData_Group], nominationsData[NominationsData_Map],
+	Forward_NominationAdded(nominationsData.group, nominationsData.map,
 		owner, newMap);
 	
 	return newMap ? MapChoicesNominateResult_Added : MapChoicesNominateResult_AlreadyInVote;
 }
 
-void CopyMapDataToNominationsData(const int mapData[mapdata_t], int nominationsData[nominations_t])
+void CopyMapDataToNominationsData(const MapData mapData, Nominations nominationsData)
 {
-	strcopy(nominationsData[NominationsData_Map], sizeof(nominationsData[NominationsData_Map]), mapData[MapData_Map]);
-	strcopy(nominationsData[NominationsData_Group], sizeof(nominationsData[NominationsData_Group]), mapData[MapData_Group]);
+	strcopy(nominationsData.map, sizeof(nominationsData.map), mapData.map);
+	strcopy(nominationsData.group, sizeof(nominationsData.group), mapData.group);
 	
-	CopyStringMap(mapData[NominationsData_MapAttributes], nominationsData[MapData_MapAttributes]);
-	CopyStringMap(mapData[NominationsData_GroupAttributes], nominationsData[MapData_GroupAttributes]);
+	CopyCharStringMap(mapData.attributes, nominationsData.mapAttributes);
+	//CopyCharStringMap(mapData.groupAttributes, nominationsData.groupAttributes);
 }
 
-void CopyNominationsDataToMapData(const int nominationsData[nominations_t], int mapData[mapdata_t])
+void CopyNominationsDataToMapData(const Nominations nominationsData, MapData mapData)
 {
-	strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), nominationsData[NominationsData_Map]);
-	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), nominationsData[NominationsData_Group]);
+	strcopy(mapData.map, sizeof(mapData.map), nominationsData.map);
+	strcopy(mapData.group, sizeof(mapData.group), nominationsData.group);
 	
-	CopyStringMap(nominationsData[MapData_MapAttributes], mapData[NominationsData_MapAttributes]);
-	CopyStringMap(nominationsData[MapData_GroupAttributes], mapData[NominationsData_GroupAttributes]);
+	CopyCharStringMap(nominationsData.mapAttributes, mapData.attributes);
 }
 
 // Events
@@ -1334,21 +1400,18 @@ Action Forward_VoteWon(MapChoices_MapChange when, const int mapData[mapdata_t])
 	return result;
 }
 
-Action Forward_CheckMapFilter(const int mapData[mapdata_t])
+Action Forward_CheckFilter(FilterType type, StringMap attributes)
 {
 	Action result = Plugin_Continue;
-	Call_StartForward(g_Forward_MapFilter);
-	Call_PushArray(mapData, sizeof(mapData));
-	Call_Finish(result);
-	
-	return result;
-}
-
-Action Forward_CheckGroupFilter(const int groupData[groupdata_t])
-{
-	Action result = Plugin_Continue;
-	Call_StartForward(g_Forward_GroupFilter);
-	Call_PushArray(groupData, sizeof(groupData));
+	if (type == GroupFilter)
+	{
+		Call_StartForward(g_Forward_GroupFilter);
+	}
+	else
+	{
+		Call_StartForward(g_Forward_MapFilter);
+	}
+	Call_PushCell(attributes);
 	Call_Finish(result);
 	
 	return result;
@@ -1395,12 +1458,12 @@ public int Native_GetNominatedMapList(Handle plugin, int numParams)
 	
 	for (int i = 0; i < g_Array_NominatedMaps.Length; i++)
 	{
-		int nominationsData[nominations_t];
+		Nominations nominationsData;
 		g_Array_NominatedMaps.GetArray(i, nominationsData, sizeof(nominationsData));
 		
 		int mapData[mapdata_t];
-		strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), nominationsData[NominationsData_Map]);
-		strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), nominationsData[NominationsData_Group]);
+		strcopy(mapData[MapData_Map], sizeof(mapData[MapData_Map]), nominationsData.map);
+		strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), nominationsData.group);
 		
 		maparray.PushArray(mapData, sizeof(mapData));
 	}
@@ -1425,15 +1488,15 @@ public int Native_GetNominatedMapOwners(Handle plugin, int numParams)
 	if (pos == -1)
 		return view_as<int>(INVALID_HANDLE);
 	
-	int mapData[nominations_t];
+	Nominations mapData;
 	
 	g_Array_NominatedMaps.GetArray(pos, mapData, sizeof(mapData));
 	
 	ArrayList returnList = null;
-	if (mapData[NominationsData_Nominators] == null)
+	if (mapData.nominators == null)
 		return view_as<int>(INVALID_HANDLE);
 		
-	ArrayList tempList = mapData[NominationsData_Nominators].Clone();
+	ArrayList tempList = mapData.nominators.Clone();
 	returnList = view_as<ArrayList>(CloneHandle(tempList, plugin));
 	delete tempList;
 	
@@ -1507,7 +1570,7 @@ public int Native_VoteCompleted(Handle plugin, int numParams)
 	Internal_VoteCompleted(voteType, items, votes, totalVotes, canceled);
 }
 
-// native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0);
+// native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=-1);
 public int Native_RegisterVoteHandler(Handle plugin, int numParams)
 {
 	Function startVote = GetNativeFunction(1);
@@ -1733,3 +1796,156 @@ public int Native_GetConVarOverride(Handle plugin, int numParams)
 	return view_as<int>(out);
 }
 
+////////////////////////////////////////////////////////////////////////
+// Stocks
+
+/**
+ * Given an itemList and group name, return an ArrayList of all MapDTO items with the matching group
+ * 
+ * @param itemList      A list returned from MapChoices_ReadMapList
+ * @param groupName     The group name to look for
+ * 
+ * @deprecated          Will be removed when the mapdata rewrite is finished
+ * @return ArrayList    An ArrayList of MapChoices_MapData of the matching items.
+ */
+stock ArrayList MapChoices_GetMapsInGroup(StringMap itemList, const char[] groupName)
+{
+	if (itemList == null)
+		ThrowError("Null itemList not allowed.");
+		
+	ArrayList newItems = new ArrayList(sizeof(MapChoices_MapDTO));
+	MapChoices_GroupData groupData;
+	
+	if (!itemList.GetArray(groupName, groupData, sizeof(groupData)))
+	{
+		LogError("itemList does not have a group named \"%s\"", groupName);
+		return newItems;
+	}
+	
+	if (groupData.mapList == null)
+	{
+		LogError("itemList group \"%s\" has no map list", groupName);
+		return newItems;
+	}
+	
+	StringMapSnapshot snapshot = groupData.mapList.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int keySize = snapshot.KeyBufferSize(i);
+		char[] key = new char[keySize];
+		snapshot.GetKey(i, key, keySize);
+		
+		MapChoices_MapData mapData;
+		strcopy(mapData.map, sizeof(mapData.map), key);
+		strcopy(mapData.group, sizeof(mapData.group), groupName);
+		groupData.mapList.GetValue(key, mapData.attributes);
+		
+		newItems.PushArray(mapData, sizeof(mapData));
+	}
+	
+	return newItems;
+}
+
+/**
+ * Get a list of all maps in the itemList
+ * 
+ * @param itemList          A list returned from MapChoices_ReadMapList
+ * @return ArrayList        An ArrayList of mapdata_t items.
+ */
+ /*
+stock ArrayList MapChoices_GetAllMaps(StringMap itemList)
+{
+	if (itemList == null)
+		ThrowError("Null itemList not allowed.");
+	
+	ArrayList newItems = new ArrayList(mapdata_t);
+	
+	StringMapSnapshot groupSnapshot = itemList.Snapshot();
+	
+	for (int i = 0; i < groupSnapshot.Length; i++)
+	{
+		int groupKeySize = groupSnapshot.KeyBufferSize(i);
+		char[] groupName = new char[groupKeySize];
+		groupSnapshot.GetKey(i, groupName, groupKeySize);
+		
+		int groupData[groupdata_t];
+
+		itemList.GetArray(groupName, groupData, sizeof(groupData));
+		
+		if (groupData[GroupData_MapList] == null)
+		{
+			LogError("itemList group \"%s\" has no map list", groupName);
+			continue;
+		}
+			
+		StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
+		
+		for (int j = 0; j < snapshot.Length; j++)
+		{
+			int keySize = snapshot.KeyBufferSize(j);
+			char[] key = new char[keySize];
+			snapshot.GetKey(j, key, keySize);
+			
+			int mapData[mapdata_t];
+			int mapDataCopy[mapdata_t];
+			groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
+			MapChoices_CloneMap(mapData, mapDataCopy);
+			
+			newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
+		}
+		
+		delete snapshot;
+	}
+	
+	delete groupSnapshot;
+	
+	return newItems;
+}
+*/
+
+/*
+ * Deep Copy a MapChoices_GroupDTO
+ * This can't be a method on the enum struct or else you'll get a 
+ * "error 087: enum struct "MapChoices_GroupDTO" cannot refer to itself"
+ *
+ * @param groupData     MapChoices_GroupDTO to copy
+ * @param plugin        Handle of plugin to set as owner or null for no change
+ * @param includeMaps   Deep copy the mapList
+ *
+ * @return              A deep copy (mapList optional) of this GroupData
+ */
+void CloneGroupData(const GroupData groupData, GroupData groupDataCopy, Handle plugin = null, bool includeMaps = true)
+{
+	strcopy(groupDataCopy.group, sizeof(groupDataCopy.group), groupData.group);
+	
+	groupDataCopy.attributes = CopyCharStringMap(groupData.attributes, plugin);
+	
+	if (includeMaps && groupData.mapList != null)
+	{
+		groupDataCopy.mapList = new StringMap();
+		if (plugin != null)
+		{
+			StringMap tempCopy = groupDataCopy.mapList;
+			groupDataCopy.mapList = view_as<StringMap>(CloneHandle(tempCopy, plugin));
+			delete tempCopy;
+		}
+		
+		StringMapSnapshot snapshot = groupData.mapList.Snapshot();
+		
+		for (int i = 0; i < snapshot.Length; i++)
+		{
+			int keySize = snapshot.KeyBufferSize(i);
+			char[] map = new char[keySize];
+			snapshot.GetKey(i, map, keySize);
+			
+			StringMap attributes;
+			groupData.mapList.GetValue(map, attributes);
+			
+			StringMap mapAttributes = CopyCharStringMap(attributes, plugin);
+			groupDataCopy.mapList.SetValue(map, mapAttributes);
+		}
+		
+		delete snapshot;
+	}
+}

@@ -92,7 +92,7 @@ enum MapChoices_Team
 	MapChoices_Team2,
 	MapChoices_Team3,
 	MapChoices_Team4,
-}
+};
 
 /**
  * The kind of map list being loaded.
@@ -111,7 +111,7 @@ enum MapChoices_NominateResult
 	MapChoicesNominateResult_Added,				/**< The map was added */
 	MapChoicesNominateResult_AlreadyInVote,		/**< The map is already in the list, but now has an additional nominator */
 	MapChoicesNominateResult_InvalidMap,		/**< The map doesn't exist or wasn't in the map group */
-};
+}
 
 /**
  * When should the map change?
@@ -120,8 +120,8 @@ enum MapChoices_MapChange
 {
 	MapChoicesMapChange_Instant,				/**< Change map as soon as the voting results have come in */
 	MapChoicesMapChange_RoundEnd,				/**< Change map at the end of the round */
-	MapChoicesMapChange_MapEnd,					/**< Change the sm_nextmap cvar */
-};
+	MapChoicesMapChange_MapEnd,					/**< Change map at the end of the map */
+}
 
 /**
  * Compatibility flags for Game Plugins
@@ -129,10 +129,11 @@ enum MapChoices_MapChange
 enum MapChoices_GameFlags
 {
 	MapChoicesGame_None = 0,
-	MapChoicesGame_NoGameEnd = (1<<0),			/**< Game does NOT support game_end entities */
-	MapChoicesGame_SupportsFragLimit = (1<<1),	/**< Game supports frag limits: HL2:DM, Neotokyo (?) */
-	MapChoicesGame_OverrideRoundEnd = (1<<2),	/**< Game plugin will handle round_end event manually */
-	MapChoicesGame_AvoidHintbox = (1<<3),		/**< Game text should not be displayed in hintboxes: HL2:DM */
+	MapChoicesGame_NoGameEnd = (1<<0),          /**< Game does NOT support game_end entities */
+	MapChoicesGame_SupportsFragLimit = (1<<1),  /**< Game supports frag limits: HL2:DM, Neotokyo (?) */
+	MapChoicesGame_OverrideRoundEnd = (1<<2),   /**< Game plugin will handle round_end event manually */
+	MapChoicesGame_AvoidHintbox = (1<<3),       /**< Game text should not be displayed in hintboxes: HL2:DM */
+	MapChoicesGame_NextMapCvar = (1<<4),        /**< Game supports the nextmap cvar (TF2, CS:GO) */
 }
 
 /**
@@ -146,30 +147,54 @@ enum MapChoices_ConVarOverride
 	MapChoicesConVar_MaxRounds,
 }
 
-// SM 1.6-style enum because it's an enum-struct
-// Used to store data about a map.
-// Classic mode maplists will have the group set to MAPCHOICES_DEFAULTGROUP and null MapAttributes (to save a Handle)
-// Other uses may intentionally pass null handles for map and group attributes
-// MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
-enum mapdata_t
+/*
+ * SourceMod 1.10 enum struct
+ * Data structure for transferring map data to subplugins
+ * Classic mode maplists will have the group set to MAPCHOICES_DEFAULTGROUP and null MapAttributes (to save a Handle)
+ */
+enum struct MapChoices_MapDTO
 {
-	String:MapData_Map[PLATFORM_MAX_PATH],
-	String:MapData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
-	StringMap:MapData_MapAttributes,
-	StringMap:MapData_GroupAttributes, /**< Deprecated, will be removed once the maplist update hits */
+	char map[PLATFORM_MAX_PATH];
+	char group[MAPCHOICES_MAX_GROUP_LENGTH];
+	StringMap attributes; // <char[], char[]>
+	
+	/*
+	 * Clean up all handles used by this enum.
+	 *
+	 * This function largely exists in case we change this enum between versions
+	 * For example, during early alpha this struct also had a groupdata_t
+	 *
+	 * @noreturn	 
+	 */
+    void Close()
+    {
+    	delete this.attributes;
+    }
 };
 
-
-// SM 1.6-style enum because it's an enum-struct
-// Used to store data about a group
-// Note that the StringMap may be null if there were no attributes
-// MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
-enum groupdata_t
+/*
+ * SM 1.10 enum-struct
+ * Used to store data about a group
+ * Note that groupAttributes may be null if there were no attributes
+ * MAPCHOICES_DEFAULTGROUP will have a null GroupAttributes StringMap
+ */
+enum struct MapChoices_GroupDTO
 {
-	String:GroupData_Group[MAPCHOICES_MAX_GROUP_LENGTH],
-	StringMap:GroupData_GroupAttributes,
-	StringMap:GroupData_MapList,
-}
+	char group[MAPCHOICES_MAX_GROUP_LENGTH]; // Must exist for subplugins despite being redundant
+	StringMap attributes; // <char[], char[]>
+	
+	/*
+	 * Clean up all handles used by this enum.
+	 *
+	 * This includes all map attributes lists
+	 *
+	 * @noreturn 
+	 */
+	void Close()
+	{
+		delete this.attributes;
+	}
+};
 
 /**
  * This is the MapChoices equivalent to SourceMod's ReadMapList.
@@ -205,35 +230,35 @@ enum groupdata_t
  * Modifying arrays created by this function will not affect future return values or 
  * or the contents of arrays returned to other plugins.
  *
- * @param array		Array to store the map list.  If INVALID_HANDLE, a new blank 
- *						array will be created.  The blocksize should be mapdata_t; 
- *						otherwise results may be truncated.  Items are added to the array
- *						as mapdata_t arrays.  The array is never checked for duplicates, 
- *						and it is not read beforehand.  Only the serial number is used to
- *						detect changes.
- * @param serial		Serial number to identify last known map list change.  If -1, the 
- *						the value will not be checked.  If the map list has since changed, 
- *						the serial is updated (even if -1 was passed).  If there is an error 
- *						finding a valid maplist, then the serial is set to -1.
- * @param config			Config name, or "default" for the default map list.  Config names 
- *						should be somewhat descriptive.  For example, the admin menu uses 
- *						a config name of "admin menu".  The list names can be configured 
- *						by users in addons/sourcemod/configs/maplists.cfg.
- * @param flags		MAPLIST_FLAG flags.
- * @return			On failure:
+ * @param trie          StringMap to store the map list.  If null, a new blank StringMap
+ *                      will be created.  The blocksize should be MapChoices_GroupDTO; 
+ *                      otherwise results may be truncated.  Items are added to the array
+ *                      as MapChoices_GroupDTO structs.  The array is never checked for
+ *                      duplicates, and it is not read beforehand.  Only the serial number
+ *                      is used to detect changes.
+ * @param serial        Serial number to identify last known map list change.  If -1, the 
+ *                      the value will not be checked.  If the map list has since changed, 
+ *                      the serial is updated (even if -1 was passed).  If there is an error 
+ *                      finding a valid maplist, then the serial is set to -1.
+ * @param config        Config name, or "default" for the default map list.  Config names 
+ *                      should be somewhat descriptive.  For example, the admin menu uses 
+ *                      a config name of "admin menu".  The list names can be configured 
+ *                      by users in addons/sourcemod/configs/maplists.cfg.
+ * @param flags         MAPLIST_FLAG flags.
+ * @return          On failure:
  *						INVALID_HANDLE is returned, the serial is set to -1, and the input 
- *						array (if any) is left unchanged.
- *					On no change:
- *						INVALID_HANDLE is returned, the serial is unchanged, and the input 
- *						array (if any) is left unchanged.
- *					On success:
- *						A valid array Handle is returned, containing at least one mapdata_t.  
- *						If an array was passed, the return value is equal to the passed Array 
- *						Handle.  If the passed array was not cleared, it will have grown by at 
- *						least one item.  The serial number is updated to a positive number.
- * @error			Invalid array Handle that is not INVALID_HANDLE.
+ *                      array (if any) is left unchanged.
+ *                  On no change:
+ *                      INVALID_HANDLE is returned, the serial is unchanged, and the input 
+ *                      array (if any) is left unchanged.
+ *                  On success:
+ *                      A valid array Handle is returned, containing at least one mapdata_t.  
+ *                      If an array was passed, the return value is equal to the passed Array 
+ *                      Handle.  If the passed array was not cleared, it will have grown by at 
+ *                      least one item.  The serial number is updated to a positive number.
+ * @error               Invalid array Handle that is not INVALID_HANDLE/null.
  */
-native StringMap MapChoices_ReadMapList(StringMap array=null, &serial=-1, const char[] config="default", int flags=MAPLIST_FLAG_CLEARARRAY);
+native StringMap MapChoices_ReadMapList(StringMap trie=null, int &serial=-1, const char[] config="default", int flags=MAPLIST_FLAG_CLEARARRAY);
 
 /**
  * Makes a compatibility binding for map lists.  For example, if a function previously used 
@@ -242,142 +267,42 @@ native StringMap MapChoices_ReadMapList(StringMap array=null, &serial=-1, const 
  * 
  * This is the MapChoices equivalent of SourceMod's SetMapListCompatBind.
  * 
- * @param name			Configuration name that would be used with MapChoices_ReadMapList().
- * @param file			Default file to use.
- * @param mapListType		Which map list type this is.
+ * @param name          Configuration name that would be used with MapChoices_ReadMapList().
+ * @param file          Default file to use.
+ * @param mapListType   Which map list type this is.
  * @noreturn
  */
 native void MapChoices_SetMapListCompatBind(const char[] file, const char[] name, MapChoices_MapListType mapListType = MapChoicesMapList_Classic);
 
-/**
- * Close a Map List.  This is mandatory to prevent memory leaks
- * 
- * Note: mapList is passed by reference, so it will be deleted in the calling plugin as well.
- * 
- * @param mapList		A mapList returned from ReadMapList
+/*
+ * Deep Copy a MapChoices_GroupDTO
+ * This can't be a method on the enum struct or else you'll get a 
+ * "error 087: enum struct "MapChoices_GroupDTO" cannot refer to itself"
+ *
+ * @param groupData     MapChoices_GroupDTO to copy
+ * @param plugin        Handle of plugin to set as owner or null for no change
+ *
+ * @return              A deep copy of this GroupDTO
  */
-stock void MapChoices_CloseMapList(StringMap &mapList)
+stock void MapChoices_CloneGroupDTO(const MapChoices_GroupDTO groupData, MapChoices_GroupDTO groupDataCopy, Handle plugin = null)
 {
-	if (mapList == null)
-		return;
+	strcopy(groupDataCopy.group, sizeof(groupDataCopy.group), groupData.group);
 	
-	StringMapSnapshot snapshot = mapList.Snapshot();
-	
-	for (int i = 0; i < snapshot.Length; i++)
-	{
-		int keySize = snapshot.KeyBufferSize(i);
-		char[] key = new char[keySize];
-		snapshot.GetKey(i, key, keySize);
-		
-		int groupData[groupdata_t];
-		mapList.GetArray(key, groupData, sizeof(groupData));
-		
-		MapChoices_CloseGroup(groupData);
-	}
-	
-	delete mapList;
+	groupDataCopy.attributes = CopyCharStringMap(groupData.attributes, plugin);
 }
-
-/**
- * Close all handles for a groupdata_t
+	
+/*
+ * Turn an ArrayList of maps into StringMap<char[], StringMap<char[], char[]>
+ * Note that the internal StringMap will be empty
  * 
- * @param groupData 	The groupdata_t to close
+ * @param mapArray  ArrayList of map names
+ * @param plugin    Plugin who should own the returned StringMap
+ *                  or null if ownership should stay the same
+ *
+ * @return StringMap<char[], MapChoices_MapDTO>, keys will be the map's name
+ *
+ * TODO Check if this is needed externally or if it should just be an internal function
  */
-stock void MapChoices_CloseGroup(int groupData[groupdata_t])
-{
-	if (groupData[GroupData_MapList] == null)
-		return;
-	
-	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
-	
-	for (int i = 0; i < snapshot.Length; i++)
-	{
-		int keySize = snapshot.KeyBufferSize(i);
-		char[] key = new char[keySize];
-		snapshot.GetKey(i, key, keySize);
-		
-		int mapData[mapdata_t];
-		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
-		
-		MapChoices_CloseMap(mapData);
-	}
-	
-	groupData[GroupData_Group][0] = '\0';
-	delete groupData[GroupData_MapList];
-	delete groupData[GroupData_GroupAttributes];
-}
-
-/**
- * Close all handles for a mapdata_t
- * 
- * @param mapData		The mapdata_t to close
- */
-stock void MapChoices_CloseMap(int mapData[mapdata_t])
-{
-	mapData[MapData_Map][0] = '\0';
-	
-	delete mapData[MapData_MapAttributes];
-}
-
-/**
- * Delete a single map entry
- * 
- * @deprecated			Will be removed when the mapdata rewrite is finished
- * @param mapData			The mapdata_t whose attributes lists should be deleted
- */
-stock void MapChoices_DeleteMapData(int mapData[mapdata_t])
-{
-	delete mapData[MapData_MapAttributes];
-	delete mapData[MapData_GroupAttributes];
-}
-
-/**
- * Delete a single group entry
- * 
- * @deprecated			Will be removed when the mapdata rewrite is finished
- * @param groupData		The groupdata_t whose attributes lists should be deleted
- */
-stock void MapChoices_DeleteGroupData(int groupData[groupdata_t])
-{
-	delete groupData[GroupData_GroupAttributes];
-}
-
-stock void MapChoices_CloneGroup(const int groupData[groupdata_t], int groupDataCopy[groupdata_t], Handle plugin = null, bool includeMaps = true)
-{
-	StringMap mapList = new StringMap();
-	
-	if (plugin != null)
-	{
-		StringMap tempCopy = mapList;
-		mapList = view_as<StringMap>(CloneHandle(tempCopy, plugin));
-		delete tempCopy;
-	}
-	
-	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
-	groupDataCopy[GroupData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes], plugin);
-	
-	if (includeMaps)
-	{
-		StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
-		
-		for (int i = 0; i < snapshot.Length; i++)
-		{
-			int keySize = snapshot.KeyBufferSize(i);
-			char[] key = new char[keySize];
-			snapshot.GetKey(i, key, keySize);
-			
-			int mapData[mapdata_t];
-			int mapDataCopy[mapdata_t];
-			groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
-			
-			MapChoices_CloneMap(mapData, mapDataCopy, plugin);
-			groupData[GroupData_MapList].SetArray(key, mapDataCopy, sizeof(mapDataCopy));
-		}
-		
-		delete snapshot;
-	}
-}
-
 stock StringMap CopyMapsFromArrayList(ArrayList mapArray, Handle plugin = null)
 {
 	if (mapArray == null)
@@ -394,90 +319,66 @@ stock StringMap CopyMapsFromArrayList(ArrayList mapArray, Handle plugin = null)
 	
 	for (int i = 0; i < mapArray.Length; i++)
 	{
-		int mapData[mapdata_t];
-		mapArray.GetString(i, mapData[MapData_Map], sizeof(mapData[MapData_Map]));
-		mapData[MapData_MapAttributes] = new StringMap();
+		char map[PLATFORM_MAX_PATH];
+		mapArray.GetString(i, map, sizeof(map));
+		StringMap mapAttributes = new StringMap();
+		
+		copy.SetValue(map, mapAttributes);
 	}
 	
 	return copy;
 }
 
-stock void MapChoices_CloneMap(const int mapData[mapdata_t], int mapDataCopy[mapdata_t], Handle plugin = null)
-{
-	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
-	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
-	
-	mapDataCopy[MapData_MapAttributes] = CopyStringMap(mapData[MapData_MapAttributes], plugin);
-}
-
-/**
- * Create a deep copy of a mapdata_t instance
- * 
- * @param mapData			The mapdata_t to copy
- * @param mapDataCopy		The empty mapdata_t you are copying data into.
+/*
+ * Deep Copy a MapChoices_MapDTO
+ * This can't be a method on the enum struct or else you'll get a 
+ * "error 087: enum struct "MapChoices_MapDTO" cannot refer to itself"
+ *
+ * @param mapData   MapChoices_MapDTO to copy
+ * @param plugin    Handle of plugin to set as owner or null for no change
+ *
+ * @return          A deep copy of the original MapData
  */
-stock void MapChoices_CopyMapData(const int mapData[mapdata_t], int mapDataCopy[mapdata_t])
+stock void MapChoices_CloneMapDTO(const MapChoices_MapDTO mapData, MapChoices_MapDTO mapDataCopy, Handle plugin = null)
 {
-	strcopy(mapDataCopy[MapData_Map], sizeof(mapDataCopy[MapData_Map]), mapData[MapData_Map]);
-	strcopy(mapDataCopy[MapData_Group], sizeof(mapDataCopy[MapData_Group]), mapData[MapData_Group]);
-	
-	mapDataCopy[MapData_MapAttributes] = CopyStringMap(mapData[MapData_MapAttributes]);
-	mapDataCopy[MapData_GroupAttributes] = CopyStringMap(mapData[MapData_GroupAttributes]);
+	strcopy(mapDataCopy.map, sizeof(mapDataCopy.map), mapData.map);
+	strcopy(mapDataCopy.group, sizeof(mapDataCopy.group), mapData.group);
+	mapDataCopy.attributes = CopyCharStringMap(mapData.attributes, plugin);
 }
 
-/**
- * Create a deep copy of a groupdata_t instance
- * 
- * @param groupData		The groupdata_t to copy
- * @param groupDataCopy	The empty groupdata_t to copy data into.
+/* 
+ * Copy a map's attributes to a group's attributes
+ * This can't be part of the enum struct because SourcePawn currently doesn't support
+ * forward reference.
+ *
+ * Although this function exists, you'll like never use it
+ *
+ * @param mapData       MapData to copy attributes from
+ * @param groupData     GroupData to copy attributes to     
+ * @param replace       Replace group attributes with the same name?
+ *
+ * @noreturn
  */
-stock void MapChoices_CopyGroupData(const int groupData[groupdata_t], int groupDataCopy[groupdata_t])
+stock void MapChoices_CopyMapDataToGroupData(MapChoices_MapDTO mapData, MapChoices_GroupDTO groupData, bool replace = false)
 {
-	strcopy(groupDataCopy[GroupData_Group], sizeof(groupDataCopy[GroupData_Group]), groupData[GroupData_Group]);
-	
-	groupDataCopy[GroupData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes]);
+	MergeCharStringMapValues(mapData.attributes, groupData.attributes, replace);
 }
 
 /**
- * Create a deep copy of a mapdata_t instance, but output into a group_t
+ * Given an itemList, get back a MapChoices_GroupDTO ArrayList of groups
+ * This is primarily to get a list of groups and their attributes as it won't
+ * include map data
+ *
+ * @param itemList      The list of MapChoices_GroupDTO items
  * 
- * @param groupData		The groupdata_t to copy
- * @param mapData			The mapdata_t to copy data into.
- */
-stock void MapChoices_CopyMapDataToGroupData(const int mapData[mapdata_t], int groupData[groupdata_t])
-{
-	strcopy(groupData[GroupData_Group], sizeof(groupData[GroupData_Group]), mapData[MapData_Group]);
-	
-	groupData[GroupData_GroupAttributes] = CopyStringMap(mapData[MapData_GroupAttributes]);
-}
-
-/**
- * Create a deep copy of a groupdata_t instance, but output into a mapdata_t
- * 
- * @param groupData		The groupdata_t to copy
- * @param mapData			The mapdata_t to copy data into.
- */
-stock void MapChoices_CopyGroupDataToMapData(const int groupData[groupdata_t], int mapData[mapdata_t])
-{
-	strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), groupData[GroupData_Group]);
-	
-	mapData[MapData_GroupAttributes] = CopyStringMap(groupData[GroupData_GroupAttributes]);
-}
-
-/**
- * Given an itemList, get back a groupdata_t ArrayList of groups
- * You may want to cache this as it only will change when the serial changes
- * 
- * @param itemList		The list of mapdata_t items
- * 
- * @return ArrayList		Arraylist of char[] for each group
+ * @return ArrayList    Arraylist of MapChoices_GroupDTO for each group but without maps
  */
 stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 {
 	if (itemList == null)
 		ThrowError("Null itemList not allowed.");
 	
-	ArrayList groupList = new ArrayList(groupdata_t);
+	ArrayList groupList = new ArrayList(sizeof(MapChoices_GroupDTO));
 	
 	StringMapSnapshot snapshot = itemList.Snapshot();
 	
@@ -487,11 +388,11 @@ stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 		char[] key = new char[keySize];
 		snapshot.GetKey(i, key, keySize);
 		
-		int groupData[groupdata_t];
-		int groupDataCopy[groupdata_t];
+		MapChoices_GroupDTO groupData;
+		MapChoices_GroupDTO groupDataCopy;
 		itemList.GetArray(key, groupData, sizeof(groupData));
 		
-		MapChoices_CloneGroup(groupData, groupDataCopy, .includeMaps = false);
+		MapChoices_CloneGroupDTO(groupData, groupDataCopy);
 		
 		groupList.PushArray(groupDataCopy);
 	}
@@ -502,115 +403,12 @@ stock ArrayList MapChoices_GetGroupList(StringMap itemList)
 }
 
 /**
- * Given an itemList and group name, return an ArrayList of all mapdata_t items with the matching group
+ * An internal funtion to copy a StringMap that contains text attributes
  * 
- * @param itemList		A list returned from MapChoices_ReadMapList
- * @param groupName		The group name to look for
- * 
- * @deprecated			Will be removed when the mapdata rewrite is finished
- * @return ArrayList		An ArrayList of mapdata_t of the matching items.
+ * @param original  The StringMap to copy
+ * @param plugin    The plugin who should own the resulting StringMap
  */
-stock ArrayList MapChoices_GetMapsInGroup(StringMap itemList, const char[] groupName)
-{
-	if (itemList == null)
-		ThrowError("Null itemList not allowed.");
-		
-	ArrayList newItems = new ArrayList(mapdata_t);
-	int groupData[groupdata_t];
-	
-	if (!itemList.GetArray(groupName, groupData, sizeof(groupData)))
-	{
-		LogError("itemList does not have a group named \"%s\"", groupName);
-		return newItems;
-	}
-	
-	if (groupData[GroupData_MapList] == null)
-	{
-		LogError("itemList group \"%s\" has no map list", groupName);
-		return newItems;
-	}
-	
-	StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
-	
-	for (int i = 0; i < snapshot.Length; i++)
-	{
-		int keySize = snapshot.KeyBufferSize(i);
-		char[] key = new char[keySize];
-		snapshot.GetKey(i, key, keySize);
-		
-		int mapData[mapdata_t];
-		int mapDataCopy[mapdata_t];
-		groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
-		MapChoices_CloneMap(mapData, mapDataCopy);
-		
-		newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
-	}
-	
-	return newItems;
-}
-
-/**
- * Get a list of all maps in the itemList
- * 
- * @param itemList		A list returned from MapChoices_ReadMapList
- * @return ArrayList		An ArrayList of mapdata_t items.
- */
-stock ArrayList MapChoices_GetAllMaps(StringMap itemList)
-{
-	if (itemList == null)
-		ThrowError("Null itemList not allowed.");
-	
-	ArrayList newItems = new ArrayList(mapdata_t);
-	
-	StringMapSnapshot groupSnapshot = itemList.Snapshot();
-	
-	for (int i = 0; i < groupSnapshot.Length; i++)
-	{
-		int groupKeySize = groupSnapshot.KeyBufferSize(i);
-		char[] groupName = new char[groupKeySize];
-		groupSnapshot.GetKey(i, groupName, groupKeySize);
-		
-		int groupData[groupdata_t];
-
-		itemList.GetArray(groupName, groupData, sizeof(groupData));
-		
-		if (groupData[GroupData_MapList] == null)
-		{
-			LogError("itemList group \"%s\" has no map list", groupName);
-			continue;
-		}
-			
-		StringMapSnapshot snapshot = groupData[GroupData_MapList].Snapshot();
-		
-		for (int j = 0; j < snapshot.Length; j++)
-		{
-			int keySize = snapshot.KeyBufferSize(j);
-			char[] key = new char[keySize];
-			snapshot.GetKey(j, key, keySize);
-			
-			int mapData[mapdata_t];
-			int mapDataCopy[mapdata_t];
-			groupData[GroupData_MapList].GetArray(key, mapData, sizeof(mapData));
-			MapChoices_CloneMap(mapData, mapDataCopy);
-			
-			newItems.PushArray(mapDataCopy, sizeof(mapDataCopy));
-		}
-		
-		delete snapshot;
-	}
-	
-	delete groupSnapshot;
-	
-	return newItems;
-}
-
-/**
- * An internal funtion to copy a StringMap that contains MapChoices attributes
- * 
- * @param original	The StringMap to copy
- * @param copy		The StringMap to copy into.  If it is null, it will be created
- */
-stock StringMap CopyStringMap(StringMap original, Handle plugin = null)
+static StringMap CopyCharStringMap(StringMap original, Handle plugin = null)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
@@ -643,6 +441,36 @@ stock StringMap CopyStringMap(StringMap original, Handle plugin = null)
 	return copy;
 }
 
+/*
+ * Merge the values of the original StringMap into the target StringMap
+ *
+ * @param original  The StringMap to copy from
+ * @param target    The StringMap to copy to
+ * @param replace   Replace values if they exist in target?
+ *
+ * @noreturn
+ */
+static void MergeCharStringMapValues(StringMap original, StringMap target, bool replace = true)
+{
+	if (original == null || target == null)
+		return;
+	
+	StringMapSnapshot snapshot = original.Snapshot();
+	
+	for (int i = 0; i < snapshot.Length; i++)
+	{
+		int size = snapshot.KeyBufferSize(i);
+		char[] key = new char[size];
+		snapshot.GetKey(i, key, size);
+		char value[MAPCHOICES_MAX_ATTRIBUTE_LENGTH];
+		original.GetString(key, value, sizeof(value));
+		
+		target.SetString(key, value, replace);
+	}
+	
+	delete snapshot;
+}
+
 /**
  * Check if an ArrayList contains a mapData array with the specified group and map.
  * 
@@ -653,11 +481,11 @@ stock StringMap CopyStringMap(StringMap original, Handle plugin = null)
  * 
  * If FindMap returns FindMap_NotFound for either item, the item will be skipped.
  * 
- * @param mapList		The Map List to search
- * @param group		The group to find.
- * @param map			The map to find.
+ * @param mapList       The Map List to search
+ * @param group         The group to find.
+ * @param map           The map to find.
  * 
- * @return 			array position or -1 if group and map were not found
+ * @return              array position or -1 if group and map were not found
  */
 stock int FindMapInMapList(ArrayList mapList, const char[] group, const char[] map)
 {
@@ -668,16 +496,16 @@ stock int FindMapInMapList(ArrayList mapList, const char[] group, const char[] m
 	
 	for (int i = 0; i < mapList.Length; i++)
 	{
-		int mapData[mapdata_t];
+		MapChoices_MapDTO mapData;
 		mapList.GetArray(i, mapData, sizeof(mapData));
 		
-		if (!StrEqual(mapData[MapData_Group], group, false))
+		if (!StrEqual(mapData.group, group, false))
 		{
 			continue;
 		}
 
 		char resolvedMap1[PLATFORM_MAX_PATH], resolvedMap2[PLATFORM_MAX_PATH];
-		if (FindMap(mapData[MapData_Map], resolvedMap1, sizeof(resolvedMap1)) == FindMap_NotFound || FindMap(map, resolvedMap2, sizeof(resolvedMap2)) == FindMap_NotFound)
+		if (FindMap(mapData.map, resolvedMap1, sizeof(resolvedMap1)) == FindMap_NotFound || FindMap(map, resolvedMap2, sizeof(resolvedMap2)) == FindMap_NotFound)
 		{
 			continue;
 		}
@@ -698,34 +526,34 @@ stock int FindMapInMapList(ArrayList mapList, const char[] group, const char[] m
  * @param itemString		The string to store the item
  * @param maxlength		We recommend that length be PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1
  */
-stock void MapChoices_GetItemString(int item[mapdata_t], char[] itemString, int maxlength)
+stock void MapChoices_GetItemString(MapChoices_MapDTO item, char[] itemString, int maxlength)
 {
-	if (StrEqual(item[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(item[MapData_Map], MAPCHOICES_NOCHANGE))
+	if (StrEqual(item.map, MAPCHOICES_EXTEND) || StrEqual(item.map, MAPCHOICES_NOCHANGE))
 	{
-		strcopy(itemString, maxlength, item[MapData_Map]);
+		strcopy(itemString, maxlength, item.map);
 		return;
 	}
 	
-	Format(itemString, maxlength, "%s;%s", item[MapData_Group], item[MapData_Map]);
+	Format(itemString, maxlength, "%s;%s", item.group, item.map);
 }
 
-stock void MapChoices_GetMapDisplayString(int item[mapdata_t], char[] displayString, int maxlength)
+stock void MapChoices_GetMapDisplayString(MapChoices_MapDTO item, char[] displayString, int maxlength)
 {
-	if (StrEqual(item[MapData_Map], MAPCHOICES_EXTEND))
+	if (StrEqual(item.map, MAPCHOICES_EXTEND))
 	{
 		strcopy(displayString, maxlength, "MapChoices_Extend");
 	}
-	else if (StrEqual(item[MapData_Map], MAPCHOICES_NOCHANGE))
+	else if (StrEqual(item.map, MAPCHOICES_NOCHANGE))
 	{
 		strcopy(displayString, maxlength, "MapChoices_NoChange");
 	}
 	else
 	{
-		GetMapDisplayName(item[MapData_Map], displayString, maxlength);
+		GetMapDisplayName(item.map, displayString, maxlength);
 		
-		if (item[MapData_Group][0] != '\0' && !StrEqual(item[MapData_Group], MAPCHOICES_DEFAULTGROUP))
+		if (item.group[0] != '\0' && !StrEqual(item.group, MAPCHOICES_DEFAULTGROUP))
 		{
-			Format(displayString, maxlength, "%s (%s)", displayString, item[MapData_Group]);
+			Format(displayString, maxlength, "%s (%s)", displayString, item.group);
 		}
 	}
 }
@@ -768,7 +596,7 @@ stock void MapChoices_SplitItemString(const char[] itemString, char[] group, int
  * @param group	The group of the map, defaults to MAPCHOICES_DEFAULTGROUP
  * @return		Nomination Result.
  */
-native MapChoices_NominateResult MapChoices_Nominate(const int mapData[mapdata_t], int owner);
+native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const char[] map, int owner);
 
 /**
  * Attempt to remove a map from the MapChoices map list.
@@ -842,12 +670,12 @@ native MapChoices_VoteType MapChoices_GetVoteType();
  * 
  * @param group	The mapGroup for the map whose data you want
  * @param map			The map whose data you want
- * @param mapData		On success, a mapdata_t with the map's data
+ * @param mapData		On success, a MapDTO with the map's data
  * 
  * @return			true if we have data for a map, false otherwise
  * @error			if data is INVALID_HANDLE
  */
-native bool MapChoices_GetMapData(const char[] group, const char[] map, int mapData[mapdata_t]);
+native bool MapChoices_GetMapData(const char[] group, const char[] map, StringMap mapAttributes);
 
 /**
  * Checks if MapChoices will allow a vote
@@ -889,10 +717,10 @@ forward void MapChoices_OnMapVoteStarted(bool runoff);
 /**
  * A map vote just ended and a map won.
  * 
- * @param group	The map's group.  Will be MAPCHOICES_DEFAULTGROUP if running in classic mode.
- * @param map		The map that was voted in.  This will be equal to the constant
- *                 MAPCHOICES_NOCHANGE if the map is not changing
- * @param instant	True if MapChoices is going to instantly change the map, false if not.
+ * @param group     The map's group.  Will be MAPCHOICES_DEFAULTGROUP if running in classic mode.
+ * @param map       The map that was voted in.  This will be equal to the constant
+ *                  MAPCHOICES_NOCHANGE if the map is not changing
+ * @param instant   True if MapChoices is going to instantly change the map, false if not.
  * @noreturn
  */
 forward void MapChoices_OnMapVoteEnded(const char[] group, const char[] map, bool instant);
@@ -900,35 +728,37 @@ forward void MapChoices_OnMapVoteEnded(const char[] group, const char[] map, boo
 /**
  * A warning timer just started.
  * 
- * @param totalTime	The total length of time that the timer will tick
- * @param runoff		True if the vote is a runoff vote.
+ * @param totalTime	    The total length of time that the timer will tick
+ * @param runoff        True if the vote is a runoff vote.
  */
 forward void MapChoices_OnWarningTimerStarted(int totalTime, bool runoff);
 
 /**
  * During a warning timer, this will fire every time the timer ticks
  * 
- * @param time	The number of seconds left before the vote starts
+ * @param time      The number of seconds left before the vote starts
  */
 forward void MapChoices_OnWarningTimerTicked(int time);
 
 /**
  * A map was added to the nominations list.
  * 
- * @param group	The group of the map that was added.
- * @param map		The map that was added.
- * @param owner	The user that added the map.  Will be 0 if the map was programatically added.
- * @param newMap	True if the map was added to the nominations list for the first time, false if it was already nominated
+ * @param group     The group of the map that was added.
+ * @param map       The map that was added.
+ * @param owner     The user that added the map.  Will be 0 if the map was programatically added.
+ * @param newMap    True if the map was added to the nominations list for the first time,
+ *                  false if it was already nominated
  */
 forward void MapChoices_OnNominationAdded(const char[] group, const char[] map, int owner, bool newMap);
 
 /**
  * A map has been removed from the nominations list.
  * 
- * @param group	The group of the map that was removed.
- * @param map		The map that was removed.
- * @param owner	The user that added the map.
- * @param removed	True if this map was removed entirely, false if there are still nominations for it.
+ * @param group     The group of the map that was removed.
+ * @param map       The map that was removed.
+ * @param owner     The user that added the map.
+ * @param removed   True if this map was removed entirely, false if there are still nominations
+ *                  for this map.
  */
 forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map, int owner, bool removed);
 
@@ -940,14 +770,14 @@ forward void MapChoices_OnNominationRemoved(const char[] group, const char[] map
 /**
  * Tells a vote system plugin to start a vote.
  * 
- * @param voters			Who is in the vote?
- * @param voterCount		How many voters are there?
- * @param duration		How long should the vote last?
- * @param voteType		Which vote type is this: Map or Group?
- * @param itemList		A flat ArrayList of items.
- * @param noVoteOption		Add the No Vote option to the menu?  May not be supported by alternative vote providers.
+ * @param voters            Who is in the vote?
+ * @param voterCount        How many voters are there?
+ * @param duration          How long should the vote last?
+ * @param voteType          Which vote type is this: Map or Group?
+ * @param itemList          A flat ArrayList of items.
+ * @param noVoteOption      Add the No Vote option to the menu?  May not be supported by alternative vote providers.
  * 
- * @return				Plugin_Handled to indicate that a vote system handled this vote start
+ * @return                  Plugin_Handled to indicate that a vote system handled this vote start
  */
 typedef MapChoices_HandlerStartVote = function Action (int[] voters, int voterCount, int duration, MapChoices_VoteType voteType, ArrayList itemList, bool noVoteOption);
 
@@ -955,16 +785,16 @@ typedef MapChoices_HandlerStartVote = function Action (int[] voters, int voterCo
  * Tells a vote system plugin to cancel a vote.
  * Potentially obsoleted by MapChoices_VoteCompleted's canceled bool as the vote systems can inform us of a cancel.
  * 
- * @return			Plugin_Handled to indicate that a vote system handled this vote cancel
+ * @return                  Plugin_Handled to indicate that a vote system handled this vote cancel
  */
 typedef MapChoices_HandlerCancelVote = function Action ();
 
 /**
  * Ask a vote system plugin whether it has a vote currently in progress
  * 
- * @param isInProgress		The plugin will set this to yet or no depending on whether a vote is in progress
+ * @param isInProgress The plugin will set this to yet or no depending on whether a vote is in progress
  * 
- * @return			Plugin_Handled to indicate that a vote system handled this vote inprogress check
+ * @return             Plugin_Handled to indicate that a vote system handled this vote inprogress check
  */
 typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
 
@@ -973,10 +803,10 @@ typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress
  * 
  * This is mainly for plugins like NativeVotes to display a win or lose message.
  * 
- * @param mapData		A mapdata_t of the map or group's information
- * @return			Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
+ * @param mapData   A mapdata_t of the map or group's information
+ * @return          Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
  */
-typedef MapChoices_HandlerVoteWon = function Action (MapChoices_MapChange when, int mapData[mapdata_t]);
+typedef MapChoices_HandlerVoteWon = function Action (MapChoices_MapChange when, char[] winner);
 
 /**
  * If registered, this will be called when a vote is lost.
@@ -991,25 +821,25 @@ typedef MapChoices_HandlerVoteLost = function Action (MapChoices_VoteFailedType 
 /**
  * A Vote System plugin finished a vote.
  * 
- * MapChoices_HandlerVoteWon and MapChoices_HandlerVoteLost will be called from this function.
+ * Note: MapChoices_HandlerVoteWon and MapChoices_HandlerVoteLost will be called from this function.
  * 
- * @param voteType		The vote type in question.  Can be Map or Group.
- * @param items			An ArrayList of mapdata_t for all items that got votes.
- * @param votes			An ArrayList containing the number of votes corresponding to each of the items above.
- * @param totalVotes		The total number of votes cast
- * @param canceled		True if the vote was canceled, false otherwise.
+ * @param voteType      The vote type in question.  Can be Map or Group.
+ * @param items         An ArrayList of mapdata_t for all items that got votes.
+ * @param votes         An ArrayList containing the number of votes corresponding to each of the items above.
+ * @param totalVotes    The total number of votes cast
+ * @param canceled      True if the vote was canceled, false otherwise.
  */
 native void MapChoices_VoteCompleted(MapChoices_VoteType voteType, ArrayList items, ArrayList votes, int totalVotes, bool canceled=false);
 
 /**
  * A Vote System plugin passed a vote.
  * 
- * @param voteType		The type of vote completed: Map or Group.
- * @param mapData			Map Data for the item that won the vote.  MapData_Map and MapData_MapAttributes will be empty for a group vote
+ * @param voteType      The type of vote completed: Map or Group.
+ * @param mapData       Map Data for the item that won the vote.  MapData_Map and MapData_MapAttributes will be empty for a group vote
  * 
  * @error if MapChoices isn't running a vote at the time.
  */
-//native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, int mapData[mapdata_t], int votes, int votesTotal);
+//native void MapChoices_VoteSucceeded(MapChoices_VoteType voteType, MapChoices_MapDTO mapData, int votes, int votesTotal);
 
 /**
  * A Vote System plugin failed a vote.
@@ -1030,12 +860,12 @@ native void MapChoices_VoteCompleted(MapChoices_VoteType voteType, ArrayList ite
  * This really exists for NativeVotes, so unless you have some use for it,
  * you really shouldn't be messing with it.
  * 
- * @param startVote		The function to call when a vote starts.
- * @param cancelVote		The function to call when a vote is canceled.
- * @param isVoteInProgress	The function to call to determine whether or not a vote is in progress
- * @param voteLimit		The number of items that can be in a vote.
+ * @param startVote         The function to call when a vote starts.
+ * @param cancelVote        The function to call when a vote is canceled.
+ * @param isVoteInProgress  The function to call to determine whether or not a vote is in progress
+ * @param voteLimit         The number of items that can be in a vote.
  */
-native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=0,
+native bool MapChoices_RegisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress, int voteLimit=-1,
 	MapChoices_HandlerVoteWon voteWon=INVALID_FUNCTION, MapChoices_HandlerVoteLost voteLost=INVALID_FUNCTION);
 native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVote, MapChoices_HandlerCancelVote cancelVote, MapChoices_HandlerIsVoteInProgress isVoteInProgress,
 	MapChoices_HandlerVoteWon voteWon=INVALID_FUNCTION, MapChoices_HandlerVoteLost voteLost=INVALID_FUNCTION);
@@ -1044,28 +874,16 @@ native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
 // Functions used by Map Filter plugins
 
 /**
- * Allow the named map to be played?
+ * Allow a map/group to be played based on the attributes list
  * 
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  * 
- * @param mapData		Map Data.  See mapdata_t for details.
+ * @param mapAttributes	    Map/group attributes. StringMap<char[], char[]>
  * 
- * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+ * @return                  Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
  */
-typedef MapChoices_MapFilter = function Action (const int mapData[mapdata_t]);
-
-/**
- * Allow the named group to be played?
- *
- * Note: Any other plugin can deny the group before your plugin executes this, so do not
- * expect to use this for statistical purposes
- * 
- * @param groupData	Group data.  See groupdata_t for details.
- * 
- * @return 			Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
- */
-typedef MapChoices_GroupFilter = function Action (const int groupData[groupdata_t]);
+typedef MapChoices_Filter = function Action (StringMap attributes);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
@@ -1077,7 +895,7 @@ typedef MapChoices_GroupFilter = function Action (const int groupData[groupdata_
  * 
  * @return 		true if the filter was added
  */
-native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
+native bool MapChoices_RegisterMapFilter(MapChoices_Filter filter);
 
 /**
  * Unregister a map filter.
@@ -1086,7 +904,7 @@ native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
  * 
  * @return 		true if the filter was removed, false if it wasn't registered
  */
-native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
+native bool MapChoices_UnregisterMapFilter(MapChoices_Filter filter);
 
 /**
  * Register a group filter.  Group filters are called when a group is selected to be added
@@ -1098,7 +916,7 @@ native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
  * 
  * @return		true if the filter was added
  */
-native bool MapChoices_RegisterGroupFilter(MapChoices_GroupFilter filter);
+native bool MapChoices_RegisterGroupFilter(MapChoices_Filter filter);
 
 /**
  * Unregister a group filter.
@@ -1107,25 +925,26 @@ native bool MapChoices_RegisterGroupFilter(MapChoices_GroupFilter filter);
  * 
  * @return		true if the filter was removed, false if it wasn't registered
  */
-native bool MapChoices_UnregisterGroupFilter(MapChoices_GroupFilter filter);
+native bool MapChoices_UnregisterGroupFilter(MapChoices_Filter filter);
 
 /**
  * From a subplugin, check if a map matches a map filter
  * 
- * @param mapData		A map's map data
+ * @param group     Map group
+ * @param map       Map name
  * 
  * @return			true if a filter blocked the map, false otherwise
  */
-native bool MapChoices_CheckMapFilter(const int mapData[mapdata_t]);
+native bool MapChoices_CheckMapFilter(const char[] group, const char[] map);
 
 /**
  * From a subplugin, check if a group matches a group filter
  * 
- * @param groupData	Group data.  See groupdata_t for details.
+ * @param group     Group name
  * 
  * @return			true if a filter blocked the group, false otherwise
  */
-native bool MapChoices_CheckGroupFilter(const int groupData[groupdata_t]);
+native bool MapChoices_CheckGroupFilter(const char[] group);
 
 // --------------------------------------------------------------------------------
 // Functions used by Game plugins

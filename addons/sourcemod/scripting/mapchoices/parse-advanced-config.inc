@@ -52,20 +52,44 @@ enum AdvMapListState:
 	ADV_MPS_GROUP,
 	ADV_MPS_MAP,
 }
-static int m_MapData[mapdata_t];
-static int m_GroupData[groupdata_t];
+
+/*
+ * SourceMod 1.10 enum struct
+ * Data to store about a map until we insert it into the Group mapList
+ */
+enum struct MapData
+{
+	char map[PLATFORM_MAX_PATH];
+	StringMap attributes; // <char[], char[]>
+	
+	/*
+	 * Clean up all handles used by this enum.
+	 *
+	 * This function largely exists in case we change this enum between versions
+	 * For example, during early alpha this struct also had a groupdata_t
+	 *
+	 * @noreturn	 
+	 */
+    void Close()
+    {
+    	delete this.attributes;
+    }
+};
+
+static MapData m_MapData;
+static GroupData m_GroupData;
 static AdvMapListState m_CurAdvState = ADV_MPS_NONE;
 static int m_AdvIgnoreLevel;
 static StringMap tempMapTrie;
 
-bool ReadAdvancedMapFile(int[] pMapList)
+bool ReadAdvancedMapFile(MaplistInfo pMapList)
 {
-	if (!FileExists(pMapList[maplist_path], true))
+	if (!FileExists(pMapList.path, true))
 	{
 		return false;
 	}
 	
-	MapChoices_CloseMapList(pMapList[maplist_pTrie]);
+	pMapList.pTrie.Close();
 	
 	SMCParser parser = GetAdvancedCfgSMCParser();
 	
@@ -74,18 +98,18 @@ bool ReadAdvancedMapFile(int[] pMapList)
 	
 	SMCError error;
 	
-	if ((error = parser.ParseFile(pMapList[maplist_path], line, col))
+	if ((error = parser.ParseFile(pMapList.path, line, col))
 		!= SMCError_Okay)
 	{
 		char errmsg[256];
 		SMC_GetErrorString(error, errmsg, sizeof(errmsg));
 		
-		LogError("[MC] Could not parse file \"%s\"", pMapList[maplist_path]);
+		LogError("[MC] Could not parse file \"%s\"", pMapList.path);
 		LogError("[MC] Error on line %d (col %d): %s", line, col, errmsg);		
 		return false;
 	}
 	
-	pMapList[maplist_pTrie] = tempMapTrie;
+	pMapList.pTrie = tempMapTrie;
 	return true;
 }
 
@@ -94,7 +118,7 @@ public void ParseAdvancedList_ParseStart(SMCParser smc)
 {
 	m_CurAdvState = ADV_MPS_NONE;
 	m_AdvIgnoreLevel = 0;
-	MapChoices_CloseGroup(m_GroupData);
+	m_GroupData.Close();
 	tempMapTrie = new StringMap();
 }
   
@@ -119,20 +143,20 @@ public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, 
 	}
 	else if (m_CurAdvState == ADV_MPS_GLOBAL)
 	{
-		MapChoices_CloseGroup(m_GroupData);
+		m_GroupData.Close();
 		
-		strcopy(m_GroupData[GroupData_Group], sizeof(m_GroupData[GroupData_Group]), name);
-		m_GroupData[GroupData_GroupAttributes] = new StringMap();
-		m_GroupData[GroupData_MapList] = new StringMap();
+		strcopy(m_GroupData.group, sizeof(m_GroupData.group), name);
+		m_GroupData.attributes = new StringMap();
+		m_GroupData.mapList = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		MapChoices_CloseMap(m_MapData);
+		m_MapData.Close();
 		
-		strcopy(m_MapData[MapData_Map], sizeof(m_MapData[MapData_Map]), name);
-		m_MapData[MapData_MapAttributes] = new StringMap();
+		strcopy(m_MapData.map, sizeof(m_MapData.map), name);
+		m_MapData.attributes = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_MAP;
 	}
@@ -153,11 +177,11 @@ public SMCResult ParseAdvancedList_KeyValue(SMCParser smc, const char[] key, con
 	
 	if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		m_GroupData[GroupData_GroupAttributes].SetString(key, value);
+		m_GroupData.attributes.SetString(key, value);
 	}
 	else if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		m_MapData[MapData_MapAttributes].SetString(key, value);
+		m_MapData.attributes.SetString(key, value);
 	}
 	
 	return SMCParse_Continue;
@@ -173,24 +197,20 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 	
 	if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		// Copy array
-		int realMapData[mapdata_t];
-		CopyMapData(m_MapData, realMapData);
+		m_GroupData.mapList.SetValue(m_MapData.map, CloneHandle(m_MapData.attributes));
 		
-		MapChoices_CloseMap(m_MapData);
-		
-		m_GroupData[GroupData_MapList].SetArray(realMapData[MapData_Map], realMapData, sizeof(realMapData));
+		m_MapData.Close();
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		int realGroupData[groupdata_t];
+		GroupData realGroupData;
 		CopyGroupData(m_GroupData, realGroupData);
 		
-		MapChoices_CloseGroup(m_GroupData);
+		tempMapTrie.SetArray(realGroupData.group, realGroupData, sizeof(realGroupData));
 		
-		tempMapTrie.SetArray(realGroupData[GroupData_Group], realGroupData, sizeof(realGroupData));
+		m_GroupData.Close();
 		
 		m_CurAdvState = ADV_MPS_GLOBAL;
 	}
@@ -204,20 +224,16 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 
 public void ParseAdvancedList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
-	MapChoices_CloseGroup(m_GroupData);
+	// Make sure these handles are closed even if parsing fails
+	m_MapData.Close();
+	m_GroupData.Close();
 }
 
-stock void CopyMapData(int source[mapdata_t], int target[mapdata_t])
+stock void CopyGroupData(GroupData source, GroupData target)
 {
-	strcopy(target[MapData_Map], sizeof(target[MapData_Map]), source[MapData_Map]);
-	target[MapData_MapAttributes] = view_as<StringMap>(CloneHandle(source[MapData_MapAttributes]));
-}
-
-stock void CopyGroupData(int source[groupdata_t], int target[groupdata_t])
-{
-	strcopy(target[GroupData_Group], sizeof(target[GroupData_Group]), source[GroupData_Group]);
-	target[GroupData_GroupAttributes] = view_as<StringMap>(CloneHandle(source[GroupData_GroupAttributes]));
-	target[GroupData_MapList] = view_as<StringMap>(CloneHandle(source[GroupData_MapList]));
+	strcopy(target.group, sizeof(target.group), source.group);
+	target.attributes = view_as<StringMap>(CloneHandle(source.attributes));
+	target.mapList = view_as<StringMap>(CloneHandle(source.mapList));
 }
 
 SMCParser GetAdvancedCfgSMCParser()

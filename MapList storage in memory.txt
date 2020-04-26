@@ -45,6 +45,20 @@ StringMap of all groups
 			|- StringMap mapAttributes
 				|- char[] value
 
+As of alpha 2, this structure has been further simplified.
+The new structure is:
+
+StringMap group
+|- MapChoices_GroupData
+	|- char[] group
+	|- StringMap attributes
+		|- char[] value
+	|- StringMap mapList
+		|- StringMap attributes
+			|- char[] value
+
+mapdata_t is still around as MapChoices_MapData and is used as a DTO for subplugins.
+
 I originally considered an ArrayList at the maps level, but this makes it more difficult to pull up
 the mapAttributes given a map name.
 
