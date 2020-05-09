@@ -53,7 +53,7 @@ enum AdvMapListState:
 	ADV_MPS_MAP,
 }
 
-static MapChoices_MapDTO m_MapChoices_MapDTO;
+static MapChoices_MapDTO m_MapData;
 static GroupData m_GroupData;
 static AdvMapListState m_CurAdvState = ADV_MPS_NONE;
 static int m_AdvIgnoreLevel;
@@ -130,10 +130,10 @@ public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, 
 	}
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		m_MapChoices_MapDTO.Close();
+		m_MapData.Close();
 		
-		strcopy(m_MapChoices_MapDTO.map, sizeof(m_MapChoices_MapDTO.map), name);
-		m_MapChoices_MapDTO.attributes = new StringMap();
+		strcopy(m_MapData.map, sizeof(m_MapData.map), name);
+		m_MapData.attributes = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_MAP;
 	}
@@ -158,7 +158,7 @@ public SMCResult ParseAdvancedList_KeyValue(SMCParser smc, const char[] key, con
 	}
 	else if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		m_MapChoices_MapDTO.attributes.SetString(key, value);
+		m_MapData.attributes.SetString(key, value);
 	}
 	
 	return SMCParse_Continue;
@@ -174,9 +174,9 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 	
 	if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		m_GroupData.mapList.SetValue(m_MapChoices_MapDTO.map, CloneHandle(m_MapChoices_MapDTO.attributes));
+		m_GroupData.mapList.SetValue(m_MapData.map, CloneHandle(m_MapData.attributes));
 		
-		m_MapChoices_MapDTO.Close();
+		m_MapData.Close();
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
@@ -202,7 +202,7 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 public void ParseAdvancedList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
 	// Make sure these handles are closed even if parsing fails
-	m_MapChoices_MapDTO.Close();
+	m_MapData.Close();
 	m_GroupData.Close();
 }
 

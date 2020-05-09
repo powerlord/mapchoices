@@ -942,6 +942,9 @@ bool CheckMapFilter(MapChoices_MapDTO mapData)
 	MapChoices_CloneMapDTO(mapData, dataCopy);
 	
 	Action result = Forward_CheckMapFilter(dataCopy);
+
+	dataCopy.Close();
+	
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -973,6 +976,8 @@ bool CheckGroupFilterDTO(const MapChoices_GroupDTO groupData, bool deepCopy=true
 	}
 	
 	Action result = Forward_CheckGroupFilter(dataCopy);
+	dataCopy.Close();
+	
 	if (result >= Plugin_Handled)
 	{
 		return false;

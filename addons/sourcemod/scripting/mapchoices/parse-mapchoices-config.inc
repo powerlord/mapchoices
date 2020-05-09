@@ -65,10 +65,26 @@ enum struct MaplistInfo
 	bool bIsCompat;
 	bool bIsPath;
 	int last_modified_time;
-	StringMap pTrie; /**< StringMap of GroupData, which is being redesigned */
+	StringMap pTrie; /**< StringMap of GroupData */
 	int serial;
 	char name[PLATFORM_MAX_PATH];
 	char path[PLATFORM_MAX_PATH];
+	
+	// Since we don't new/delete enum arrays, just reset it.
+	// Remember to set maplist_bInitialized when you'd normally new it
+	void Reset()
+	{
+		this.type = MapChoicesMapList_Classic;
+		this.bInitialized = false;
+		this.bIsCompat = false;
+		this.bIsPath = false;
+		this.last_modified_time = 0;
+		this.pTrie = null; // Since we store this for later, don't close it
+		this.serial = -1;
+		this.name[0] = '\0';
+		this.path[0] = '\0';
+	}
+
 }
 
 #include "mapchoices/parse-advanced-config"
@@ -263,7 +279,7 @@ public void ParseMapList_ParseStart(SMCParser smc)
 {
 	m_CurState = MPS_NONE;
 	m_IgnoreLevel = 0;
-	ResetMapList(m_pCurMapList);
+	m_pCurMapList.Reset();
 	if (m_ListLookup == null)
 	{
 		m_ListLookup = new StringMap();
@@ -296,7 +312,7 @@ public SMCResult ParseMapList_NewSection(SMCParser smc, const char[] name, bool 
 	}
 	else if (m_CurState == MPS_GLOBAL)
 	{
-		ResetMapList(m_pCurMapList);
+		m_pCurMapList.Reset();
 		m_pCurMapList.bInitialized = true;
 		
 		strcopy(m_pCurMapList.name, sizeof(m_pCurMapList.name), name);
@@ -359,11 +375,11 @@ public SMCResult ParseMapList_LeavingSection(SMCParser smc)
 		{
 			m_ListLookup.SetArray(m_pCurMapList.name, m_pCurMapList, sizeof(m_pCurMapList));
 			m_MapLists.PushArray(m_pCurMapList);
-			ResetMapList(m_pCurMapList);
+			m_pCurMapList.Reset();
 		}
 		else
 		{
-			ResetMapList(m_pCurMapList);
+			m_pCurMapList.Reset();
 		}
 		m_CurState = MPS_GLOBAL;
 	}
@@ -377,7 +393,7 @@ public SMCResult ParseMapList_LeavingSection(SMCParser smc)
 
 public void ParseMapList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
-	ResetMapList(m_pCurMapList);
+	m_pCurMapList.Reset();
 }
 
 StringMap UpdateMapList(StringMap pUseTrie, const char[] name, int &pSerial, int flags, Handle plugin=INVALID_HANDLE)
@@ -696,7 +712,7 @@ static bool ReadClassicMapFile(MaplistInfo pMapList)
 			// Insurgency (presumably?) doesn't allow spaces in map names
 			// and does use a space to delimit the map name from the map mode
 			
-			// Note: SM's version of this code is daft and strips the game mode out
+			// Note: SM's version of this code strips the game mode out
 			// We make a copy first, then manipulate the copy to get just the map name
 			char mapName[PLATFORM_MAX_PATH];
 			strcopy(mapName, sizeof(mapName), buffer);
@@ -718,9 +734,11 @@ static bool ReadClassicMapFile(MaplistInfo pMapList)
 			continue;
 		}
 		
-		StringMap pMapData = new StringMap();
+		MapChoices_MapDTO pMapData;
+		strcopy(pMapData.map, sizeof(pMapData.map), buffer);
+		strcopy(pMapData.group, sizeof(pMapData.group), MAPCHOICES_DEFAULTGROUP);
 		
-		defaultGroup.mapList.SetValue(buffer, pMapData);
+		defaultGroup.mapList.SetArray(buffer, pMapData, sizeof(pMapData));
 	}
 	
 	pMapList.pTrie.SetArray(defaultGroup.group, defaultGroup, sizeof(defaultGroup));
@@ -822,22 +840,6 @@ public int Native_SetMapListCompatBind(Handle plugin, int numParams)
 	
 	UpdateCache();
 	AddOrUpdateDefault(name, file, mapListType);
-}
-
-// Since we don't new/delete enum arrays, just reset it.
-// Remember to set maplist_bInitialized when you'd normally new it
-void ResetMapList(MaplistInfo mapList)
-{
-	mapList.bInitialized = false;
-	mapList.bIsCompat = false;
-	mapList.bIsPath = false;
-	mapList.last_modified_time = 0;
-	// Since we store this for later, don't close it
-	mapList.pTrie = null;
-	mapList.serial = -1;
-	mapList.name[0] = '\0';
-	mapList.path[0] = '\0';
-	mapList.type = MapChoicesMapList_Classic;
 }
 
 stock int FindKeyInStringMap(StringMap map, const char[] key, bool caseSensitive=true)
