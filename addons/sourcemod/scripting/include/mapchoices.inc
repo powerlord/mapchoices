@@ -877,16 +877,28 @@ native bool MapChoices_UnregisterVoteHandler(MapChoices_HandlerStartVote startVo
 // Functions used by Map Filter plugins
 
 /**
- * Allow a map/group to be played based on the attributes list
+ * Allow a map to be played based on the attributes list
  * 
  * Note: Any other plugin can deny the map before your plugin executes this, so do not
  * expect to use this for statistical purposes
  * 
- * @param mapAttributes	    Map/group attributes. StringMap<char[], char[]>
+ * @param mapData			Map DTO with map, group, and attributes
  * 
  * @return                  Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
  */
-typedef MapChoices_Filter = function Action (StringMap attributes);
+typedef MapChoices_MapFilter = function Action (MapChoices_MapDTO mapData);
+
+/**
+ * Allow a group to be played based on the attributes list
+ * 
+ * Note: Any other plugin can deny the map before your plugin executes this, so do not
+ * expect to use this for statistical purposes
+ * 
+ * @param groupData			Group DTO with group and attributes
+ * 
+ * @return                  Plugin_Continue to allow, Plugin_Handled or Plugin_Stop to deny
+ */
+typedef MapChoices_GroupFilter = function Action (MapChoices_GroupDTO groupData);
 
 /**
  * Register a map filter.  Map Filters are called when a map is selected to be added to
@@ -898,7 +910,7 @@ typedef MapChoices_Filter = function Action (StringMap attributes);
  * 
  * @return 		true if the filter was added
  */
-native bool MapChoices_RegisterMapFilter(MapChoices_Filter filter);
+native bool MapChoices_RegisterMapFilter(MapChoices_MapFilter filter);
 
 /**
  * Unregister a map filter.
@@ -907,7 +919,7 @@ native bool MapChoices_RegisterMapFilter(MapChoices_Filter filter);
  * 
  * @return 		true if the filter was removed, false if it wasn't registered
  */
-native bool MapChoices_UnregisterMapFilter(MapChoices_Filter filter);
+native bool MapChoices_UnregisterMapFilter(MapChoices_MapFilter filter);
 
 /**
  * Register a group filter.  Group filters are called when a group is selected to be added
@@ -919,7 +931,7 @@ native bool MapChoices_UnregisterMapFilter(MapChoices_Filter filter);
  * 
  * @return		true if the filter was added
  */
-native bool MapChoices_RegisterGroupFilter(MapChoices_Filter filter);
+native bool MapChoices_RegisterGroupFilter(MapChoices_GroupFilter filter);
 
 /**
  * Unregister a group filter.
@@ -928,7 +940,7 @@ native bool MapChoices_RegisterGroupFilter(MapChoices_Filter filter);
  * 
  * @return		true if the filter was removed, false if it wasn't registered
  */
-native bool MapChoices_UnregisterGroupFilter(MapChoices_Filter filter);
+native bool MapChoices_UnregisterGroupFilter(MapChoices_GroupFilter filter);
 
 /**
  * From a subplugin, check if a map matches a map filter

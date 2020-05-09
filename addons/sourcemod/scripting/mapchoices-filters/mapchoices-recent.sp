@@ -62,7 +62,7 @@ public void OnPluginStart()
 	g_Cvar_Enabled = CreateConVar("mapchoices_recent_enable", "1", "Enable MapChoices?", FCVAR_NOTIFY|FCVAR_DONTRECORD, true, 0.0, true, 1.0);
 	g_Cvar_RecentMaps = CreateConVar("mapchoices_recent_count", "5", "How many recent maps to skip in the map list? Note: The same map in different groups will be considered different maps.", _, true, 0.0);
 	
-	g_RecentMapList = new ArrayList(mapdata_t);
+	g_RecentMapList = new ArrayList(sizeof(MapChoices_MapDTO));
 	
 	AutoExecConfig(true, "mapchoices/mapchoices-recent");
 }
@@ -85,25 +85,25 @@ public void OnMapStart()
 			}
 		}
 		
-		int mapData[mapdata_t];
+		MapChoices_MapDTO mapData;
 		
 		char mapGroup[MAPCHOICES_MAX_GROUP_LENGTH];
 		MapChoices_GetCurrentMapGroup(mapGroup, sizeof(mapGroup));
 		
-		GetCurrentMap(mapData[MapData_Map], sizeof(mapData[MapData_Map]));
-		strcopy(mapData[MapData_Group], sizeof(mapData[MapData_Group]), mapGroup);
+		GetCurrentMap(mapData.map, sizeof(mapData.map));
+		strcopy(mapData.group, sizeof(mapData.group), mapGroup);
 		g_RecentMapList.PushArray(mapData);
 	}
 }
 
-public Action FilterMaps(const int mapData[mapdata_t])
+public Action FilterMaps(MapChoices_MapDTO mapData)
 {
 	if (!g_Cvar_Enabled.BoolValue)
 	{
 		return Plugin_Continue;
 	}
 	
-	if (FindMapInMapList(g_RecentMapList, mapData[MapData_Group], mapData[MapData_Map]) != -1)
+	if (FindMapInMapList(g_RecentMapList, mapData.group, mapData.map) != -1)
 	{
 		return Plugin_Handled;
 	}

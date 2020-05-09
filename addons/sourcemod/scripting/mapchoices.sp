@@ -328,8 +328,8 @@ public void OnPluginStart()
 	g_Forward_HandlerVoteWon = CreateForward(ET_Hook, Param_Cell, Param_Array);
 	g_Forward_HandlerVoteLost = CreateForward(ET_Hook, Param_Cell);
 		
-	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Cell);
-	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_Cell);
+	g_Forward_MapFilter = CreateForward(ET_Hook, Param_Array);
+	g_Forward_GroupFilter = CreateForward(ET_Hook, Param_Array);
 	
 	g_Forward_ChangeMap = CreateForward(ET_Single, Param_String, Param_Cell);
 	
@@ -624,7 +624,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 			
 			CopyNominationsDataToMapChoices_MapDTO(nominationsData, mapData);
 			// We must filter out maps here even if they were OK during the nomination phase
-			if (!CheckFilter(MapFilter, mapData.attributes))
+			if (!CheckMapFilter(mapData))
 			{
 				itemList.PushArray(mapData, sizeof(mapData));
 			}
@@ -660,7 +660,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 						MapChoices_MapDTO mapData;
 						potentials.GetArray(random, mapData, sizeof(mapData.attributes));
 						
-						if (!CheckFilter(MapFilter, mapData.attributes))
+						if (!CheckMapFilter(mapData))
 						{
 							itemList.PushArray(mapData);
 						}
@@ -681,7 +681,7 @@ void StartVote(MapChoices_MapChange when, ArrayList itemList, MapChoices_VoteTyp
 						GroupData groupData;
 						potentials.GetArray(random, groupData, sizeof(groupData));
 						
-						if (!CheckFilter(GroupFilter, groupData.attributes))
+						if (!CheckGroupFilter(groupData))
 						{
 							itemList.PushArray(groupData);
 						}
@@ -935,12 +935,44 @@ bool Core_IsVoteInProgress()
 	return IsVoteInProgress();
 }
 
-bool CheckFilter(FilterType type, StringMap attributes)
+bool CheckMapFilter(MapChoices_MapDTO mapData)
 {
 	// Deep copy so that subplugins can't overwrite master data
-	StringMap attributesCopy = CopyCharStringMap(attributes);
+	MapChoices_MapDTO dataCopy;
+	MapChoices_CloneMapDTO(mapData, dataCopy);
 	
-	Action result = Forward_CheckFilter(type, attributesCopy);
+	Action result = Forward_CheckMapFilter(dataCopy);
+	if (result >= Plugin_Handled)
+	{
+		return false;
+	}
+	
+	return true;
+}
+
+bool CheckGroupFilter(GroupData groupData)
+{
+	MapChoices_GroupDTO dataCopy;
+	groupData.ToDTO(dataCopy);
+	
+	return CheckGroupFilterDTO(dataCopy, false);
+}
+
+bool CheckGroupFilterDTO(const MapChoices_GroupDTO groupData, bool deepCopy=true)
+{
+	// Deep copy so that subplugins can't overwrite master data
+	MapChoices_GroupDTO dataCopy;
+	
+	if (deepCopy)
+	{
+		MapChoices_CloneGroupDTO(groupData, dataCopy);
+	}
+	else
+	{
+		dataCopy = groupData;
+	}
+	
+	Action result = Forward_CheckGroupFilter(dataCopy);
 	if (result >= Plugin_Handled)
 	{
 		return false;
@@ -1372,18 +1404,23 @@ Action Forward_VoteWon(MapChoices_MapChange when, const MapChoices_MapDTO mapDat
 	return result;
 }
 
-Action Forward_CheckFilter(FilterType type, StringMap attributes)
+Action Forward_CheckMapFilter(MapChoices_MapDTO mapData)
 {
 	Action result = Plugin_Continue;
-	if (type == GroupFilter)
-	{
-		Call_StartForward(g_Forward_GroupFilter);
-	}
-	else
-	{
-		Call_StartForward(g_Forward_MapFilter);
-	}
-	Call_PushCell(attributes);
+
+	Call_StartForward(g_Forward_MapFilter);
+	Call_PushArray(mapData, sizeof(mapData));
+	Call_Finish(result);
+	
+	return result;
+}
+
+Action Forward_CheckGroupFilter(MapChoices_GroupDTO groupData)
+{
+	Action result = Plugin_Continue;
+
+	Call_StartForward(g_Forward_GroupFilter);
+	Call_PushArray(groupData, sizeof(groupData));
 	Call_Finish(result);
 	
 	return result;
@@ -1609,7 +1646,7 @@ public int Native_CheckMapFilter(Handle plugin, int numParams)
 	MapChoices_MapDTO mapData;
 	GetNativeArray(1, mapData, sizeof(mapData));
 	
-	return CheckFilter(MapFilter, mapData.attributes);
+	return CheckMapFilter(mapData);
 }
 
 // native bool MapChoices_CheckGroupFilter(const int groupData[groupdata_t]);
@@ -1618,7 +1655,7 @@ public int Native_CheckGroupFilter(Handle plugin, int numParams)
 	MapChoices_GroupDTO groupData;
 	GetNativeArray(1, groupData, sizeof(groupData));
 	
-	return CheckFilter(GroupFilter, groupData.attributes);
+	return CheckGroupFilterDTO(groupData);
 }
 
 // native bool MapChoices_WillChangeAtRoundEnd();
