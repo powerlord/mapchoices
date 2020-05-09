@@ -40,11 +40,11 @@
 
 #pragma semicolon 1
 #pragma newdecls required
-#define VERSION "1.0.0 alpha 1"
+#define VERSION "1.0.0 alpha 2"
 
 int g_RoundCount;
 
-int g_WinCount[MapChoices_Team];
+int g_WinCount[MAPCHOICES_TEAM_COUNT];
 
 //ConVars
 ConVar g_Cvar_Enabled;
@@ -383,7 +383,7 @@ void StartVote()
 	
 	// TODO: Add support for Group and Tiered votes.
 
-	ArrayList maps = new ArrayList(mapdata_t);
+	ArrayList maps = new ArrayList(sizeof(MapChoices_MapDTO));
 	// TODO: Get a list of maps to send to MapChoices
 	
 	MapChoices_InitiateVote(MapChoicesMapChange_MapEnd, maps, "mapchoices-mapend", .finishedFunction=OnVoteFinished);

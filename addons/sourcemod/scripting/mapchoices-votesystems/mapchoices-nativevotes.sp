@@ -39,7 +39,7 @@
 #pragma semicolon 1
 #pragma newdecls required
 
-#define VERSION "1.0.0 alpha 1"
+#define VERSION "1.0.0 alpha 2"
 
 ConVar g_Cvar_Enabled;
 
@@ -48,6 +48,9 @@ MapChoices_VoteType g_VoteType = MapChoices_MapVote;
 StringMap g_ItemData;
 
 NativeVote g_NativeVote = null;
+
+// Only used for tiered votes
+char g_Group[MAPCHOICES_MAX_GROUP_LENGTH];
 
 public Plugin myinfo = {
 	name			= "MapChoices NativeVotes",
@@ -87,9 +90,14 @@ public void OnPluginEnd()
 	MapChoices_UnregisterVoteHandler(Handler_StartVote, Handler_CancelVote, Handler_IsVoteInProgress);
 }
 
-public Action Handler_VoteWon(MapChoices_MapChange when, int mapData[mapdata_t])
+public Action Handler_VoteWon(MapChoices_MapChange when, char[] winner)
 {
-	DisplayPass(g_NativeVote, mapData, when);
+	DisplayPass(g_NativeVote, winner, when);
+	
+	if (g_VoteType == MapChoices_MapVote)
+	{
+		g_Group[0] = '\0';
+	}
 }
 
 public Action Handler_VoteLost(MapChoices_VoteFailedType failType)
@@ -134,10 +142,10 @@ public Action Handler_StartVote(int[] voters, int voterCount, int duration, MapC
 	
 	for (int i = 0; i < itemList.Length; i++)
 	{
-		int mapData[mapdata_t];
-		int mapDataCopy[mapdata_t];
+		MapChoices_MapDTO mapData;
+		MapChoices_MapDTO mapDataCopy;
 		itemList.GetArray(i, mapData, sizeof(mapData));
-		MapChoices_CopyMapData(mapData, mapDataCopy);
+		MapChoices_CloneMapDTO(mapData, mapDataCopy);
 
 		switch (voteType)
 		{
@@ -151,7 +159,7 @@ public Action Handler_StartVote(int[] voters, int voterCount, int duration, MapC
 			
 			case MapChoices_GroupVote:
 			{
-				g_ItemData.SetArray(mapDataCopy[MapData_Group], mapDataCopy, sizeof(mapDataCopy));
+				g_ItemData.SetArray(mapDataCopy.group, mapDataCopy, sizeof(mapDataCopy));
 			}
 		}
 	}
@@ -172,7 +180,7 @@ public Action Handler_StartVote(int[] voters, int voterCount, int duration, MapC
 		{
 			case MapChoices_MapVote:
 			{
-				int item[mapdata_t];
+				MapChoices_MapDTO item;
 				itemList.GetArray(i, item, sizeof(item));
 				
 				char itemString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
@@ -186,10 +194,10 @@ public Action Handler_StartVote(int[] voters, int voterCount, int duration, MapC
 			
 			case MapChoices_GroupVote:
 			{
-				int item[groupdata_t];
+				MapChoices_GroupDTO item;
 				itemList.GetArray(i, item, sizeof(item));
 				
-				g_NativeVote.AddItem(item[GroupData_Group], item[GroupData_Group]);
+				g_NativeVote.AddItem(item.group, item.group);
 			}
 		}
 	}
@@ -255,7 +263,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 		
 		case MenuAction_VoteCancel:
 		{
-			ArrayList items = new ArrayList(mapdata_t);
+			ArrayList items = new ArrayList(sizeof(MapChoices_MapDTO));
 			ArrayList votes = new ArrayList();
 			
 			switch (param1)
@@ -272,7 +280,7 @@ public int Handler_MapVote(NativeVote vote, MenuAction action, int param1, int p
 					for (int i = 0; i < vote.ItemCount; i++)
 					{
 						char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
-						int mapData[mapdata_t];
+						MapChoices_MapDTO mapData;
 						vote.GetItem(i, item, sizeof(item));
 						
 						g_ItemData.GetArray(item, mapData, sizeof(mapData));
@@ -317,13 +325,13 @@ public void Handler_MapVoteFinish(NativeVote vote,
 						const int[] item_indexes,
 						const int[] item_votes)
 {
-	ArrayList items = new ArrayList(mapdata_t);
+	ArrayList items = new ArrayList(sizeof(MapChoices_MapDTO));
 	ArrayList votes = new ArrayList();
 	
 	for (int i = 0; i < num_items; i++)
 	{
 		char item[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 1];
-		int mapData[mapdata_t];
+		MapChoices_MapDTO mapData;
 		vote.GetItem(item_indexes[i], item, sizeof(item));
 		
 		g_ItemData.GetArray(item, mapData, sizeof(mapData));
@@ -413,19 +421,27 @@ public void Handler_MapVoteFinish(NativeVote vote,
 	*/
 }
 
-void DisplayPass(NativeVote vote, int mapData[mapdata_t], MapChoices_MapChange when)
+void DisplayPass(NativeVote vote, char[] winner, MapChoices_MapChange when)
 {
 	if (g_VoteType == MapChoices_GroupVote)
 	{
-		vote.DisplayPass(mapData[MapData_Group]);
+		strcopy(g_Group, sizeof(g_Group), winner);
+		vote.DisplayPass(winner);
 	}
-	else if (StrEqual(mapData[MapData_Map], MAPCHOICES_EXTEND) || StrEqual(mapData[MapData_Map], MAPCHOICES_NOCHANGE))
+	else if (StrEqual(winner, MAPCHOICES_EXTEND) || StrEqual(winner, MAPCHOICES_NOCHANGE))
 	{
 		vote.DisplayPassEx(NativeVotesPass_Extend);
 	}
 	else
 	{
 		char displayString[PLATFORM_MAX_PATH + MAPCHOICES_MAX_GROUP_LENGTH + 3];
+		MapChoices_MapDTO mapData;
+		if (g_Group[0] != '\0')
+		{
+			strcopy(mapData.group, sizeof(mapData.group), g_Group);
+		}
+		strcopy(mapData.map, sizeof(mapData.map), winner);
+		
 		MapChoices_GetMapDisplayString(mapData, displayString, sizeof(displayString));
 		
 		if (when == MapChoicesMapChange_Instant)

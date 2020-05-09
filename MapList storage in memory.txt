@@ -49,27 +49,30 @@ As of alpha 2, this structure has been further simplified.
 The new structure is:
 
 StringMap group
-|- MapChoices_GroupData
+|- GroupData
 	|- char[] group
 	|- StringMap attributes
 		|- char[] value
 	|- StringMap mapList
-		|- StringMap attributes
-			|- char[] value
+		|- MapData
 
-mapdata_t is still around as MapChoices_MapData and is used as a DTO for subplugins.
+|- MapData
+	|- char[] group
+	|- char[] map
+	|- StringMap attributes
+		|- char[] value
 
 I originally considered an ArrayList at the maps level, but this makes it more difficult to pull up
 the mapAttributes given a map name.
 
-This version changes groupdata_t to a first class citizen.
+This version changes GroupData to a first class citizen.
 
 You now need to drill down farther to access the information you want.  This format also makes cleanup
 more complex. However, it also makes it considerably easier to pull up group information.
 
 I think some helper methods could be used to make this structure easier to use.
 
-Note that the group string is still in mapdata_t, as these are often passed to methods that need the mapdata
+Note that the group string is still in MapData, as these are often passed to methods that need the mapdata
 and group name.
 
 Note: We're intentionally not using KeyValues, so don't suggest them.

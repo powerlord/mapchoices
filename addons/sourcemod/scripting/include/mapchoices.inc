@@ -94,6 +94,9 @@ enum MapChoices_Team
 	MapChoices_Team4,
 };
 
+// Work around the "Array-based enum structs will be removed in 1.11" warning
+#define MAPCHOICES_TEAM_COUNT 6
+
 /**
  * The kind of map list being loaded.
  */
@@ -170,7 +173,7 @@ enum struct MapChoices_MapDTO
     {
     	delete this.attributes;
     }
-};
+}
 
 /*
  * SM 1.10 enum-struct
@@ -194,7 +197,7 @@ enum struct MapChoices_GroupDTO
 	{
 		delete this.attributes;
 	}
-};
+}
 
 /**
  * This is the MapChoices equivalent to SourceMod's ReadMapList.
@@ -203,7 +206,7 @@ enum struct MapChoices_GroupDTO
  * and MapChoices_CheckGroupFilter when you do things with maps.
  * 
  * Loads a map list to an ADT Array.
- * The ADT Array contains mapdata_t structures.
+ * The ADT Array contains MapData structures.
  *
  * A map list is a list of maps from a file.  SourceMod allows easy configuration of 
  * maplists through addons/sourcemod/configs/mapchoices.cfg.  Each entry is given a 
@@ -252,7 +255,7 @@ enum struct MapChoices_GroupDTO
  *                      INVALID_HANDLE is returned, the serial is unchanged, and the input 
  *                      array (if any) is left unchanged.
  *                  On success:
- *                      A valid array Handle is returned, containing at least one mapdata_t.  
+ *                      A valid array Handle is returned, containing at least one MapData.  
  *                      If an array was passed, the return value is equal to the passed Array 
  *                      Handle.  If the passed array was not cleared, it will have grown by at 
  *                      least one item.  The serial number is updated to a positive number.
@@ -408,7 +411,7 @@ stock ArrayList MapChoices_GetGroupList(StringMap itemList)
  * @param original  The StringMap to copy
  * @param plugin    The plugin who should own the resulting StringMap
  */
-static StringMap CopyCharStringMap(StringMap original, Handle plugin = null)
+stock StringMap CopyCharStringMap(StringMap original, Handle plugin = null)
 {
 	// If the original is null, the new version should also be null
 	if (original == null)
@@ -625,7 +628,7 @@ native MapChoices_NominateResult MapChoices_Nominate(const char[] group, const c
  * 
  * Note: Returns copies of the array, updating these arrays do not change the originals.
  *					
- * @return			An ADT array handle of mapdata_t arrays that store information about the nominated maps.
+ * @return			An ADT array handle of MapData arrays that store information about the nominated maps.
  * 					Remember to delete this ArrayList or call MapChoices_CloseMapList on it.
  */
 native ArrayList MapChoices_GetNominatedMapList();
@@ -799,11 +802,11 @@ typedef MapChoices_HandlerCancelVote = function Action ();
 typedef MapChoices_HandlerIsVoteInProgress = function Action (bool &isInProgress);
 
 /**
- * If registered, this will be called when a vote is won.  It is always a mapdata_t even for groups.
+ * If registered, this will be called when a vote is won.  It is always a MapData even for groups.
  * 
  * This is mainly for plugins like NativeVotes to display a win or lose message.
  * 
- * @param mapData   A mapdata_t of the map or group's information
+ * @param mapData   A MapData of the map or group's information
  * @return          Plugin_Handled if your plugin handled this, Plugin_Continue otherwise
  */
 typedef MapChoices_HandlerVoteWon = function Action (MapChoices_MapChange when, char[] winner);
@@ -824,7 +827,7 @@ typedef MapChoices_HandlerVoteLost = function Action (MapChoices_VoteFailedType 
  * Note: MapChoices_HandlerVoteWon and MapChoices_HandlerVoteLost will be called from this function.
  * 
  * @param voteType      The vote type in question.  Can be Map or Group.
- * @param items         An ArrayList of mapdata_t for all items that got votes.
+ * @param items         An ArrayList of MapData for all items that got votes.
  * @param votes         An ArrayList containing the number of votes corresponding to each of the items above.
  * @param totalVotes    The total number of votes cast
  * @param canceled      True if the vote was canceled, false otherwise.

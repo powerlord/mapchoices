@@ -53,30 +53,7 @@ enum AdvMapListState:
 	ADV_MPS_MAP,
 }
 
-/*
- * SourceMod 1.10 enum struct
- * Data to store about a map until we insert it into the Group mapList
- */
-enum struct MapData
-{
-	char map[PLATFORM_MAX_PATH];
-	StringMap attributes; // <char[], char[]>
-	
-	/*
-	 * Clean up all handles used by this enum.
-	 *
-	 * This function largely exists in case we change this enum between versions
-	 * For example, during early alpha this struct also had a groupdata_t
-	 *
-	 * @noreturn	 
-	 */
-    void Close()
-    {
-    	delete this.attributes;
-    }
-};
-
-static MapData m_MapData;
+static MapChoices_MapDTO m_MapChoices_MapDTO;
 static GroupData m_GroupData;
 static AdvMapListState m_CurAdvState = ADV_MPS_NONE;
 static int m_AdvIgnoreLevel;
@@ -153,10 +130,10 @@ public SMCResult ParseAdvancedList_NewSection(SMCParser smc, const char[] name, 
 	}
 	else if (m_CurAdvState == ADV_MPS_GROUP)
 	{
-		m_MapData.Close();
+		m_MapChoices_MapDTO.Close();
 		
-		strcopy(m_MapData.map, sizeof(m_MapData.map), name);
-		m_MapData.attributes = new StringMap();
+		strcopy(m_MapChoices_MapDTO.map, sizeof(m_MapChoices_MapDTO.map), name);
+		m_MapChoices_MapDTO.attributes = new StringMap();
 		
 		m_CurAdvState = ADV_MPS_MAP;
 	}
@@ -181,7 +158,7 @@ public SMCResult ParseAdvancedList_KeyValue(SMCParser smc, const char[] key, con
 	}
 	else if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		m_MapData.attributes.SetString(key, value);
+		m_MapChoices_MapDTO.attributes.SetString(key, value);
 	}
 	
 	return SMCParse_Continue;
@@ -197,9 +174,9 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 	
 	if (m_CurAdvState == ADV_MPS_MAP)
 	{
-		m_GroupData.mapList.SetValue(m_MapData.map, CloneHandle(m_MapData.attributes));
+		m_GroupData.mapList.SetValue(m_MapChoices_MapDTO.map, CloneHandle(m_MapChoices_MapDTO.attributes));
 		
-		m_MapData.Close();
+		m_MapChoices_MapDTO.Close();
 		
 		m_CurAdvState = ADV_MPS_GROUP;
 	}
@@ -225,7 +202,7 @@ public SMCResult ParseAdvancedList_LeavingSection(SMCParser smc)
 public void ParseAdvancedList_ParseEnd(SMCParser smc, bool halted, bool failed)
 {
 	// Make sure these handles are closed even if parsing fails
-	m_MapData.Close();
+	m_MapChoices_MapDTO.Close();
 	m_GroupData.Close();
 }
 
